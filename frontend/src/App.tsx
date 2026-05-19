@@ -1,0 +1,310 @@
+import { useCallback, useEffect, useState } from "react";
+import "./App.css";
+import { Lang, t } from "./lib/i18n";
+import { errString } from "./lib/errors";
+import { profile } from "../wailsjs/go/models";
+import {
+    Connect,
+    DeleteProfile,
+    Disconnect,
+    GetClusterInfo,
+    IsConnected,
+    ListProfiles,
+} from "../wailsjs/go/main/App";
+import { kafka } from "../wailsjs/go/models";
+import { ContextMenu, ContextMenuItem } from "./components/ContextMenu";
+import { VerticalSplitter, useResizableWidth } from "./components/ResizableColumns";
+import { ProfileDialog } from "./components/ProfileDialog";
+import { HelpDialog } from "./components/HelpDialog";
+import { TopicsPage } from "./pages/TopicsPage";
+import { ConsumePage } from "./pages/ConsumePage";
+import { ProducePage } from "./pages/ProducePage";
+import { SettingsPage } from "./pages/SettingsPage";
+
+type TabKey = "topics" | "consume" | "produce" | "settings";
+
+export default function App() {
+    const [lang, setLang] = useState<Lang>("ko");
+    const [profiles, setProfiles] = useState<profile.Profile[]>([]);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [connectedSet, setConnectedSet] = useState<Set<string>>(new Set());
+    const [tab, setTab] = useState<TabKey>("topics");
+    const [dialog, setDialog] = useState<{ open: boolean; editing?: profile.Profile }>({ open: false });
+    const [toast, setToast] = useState<string | null>(null);
+    const [clusterInfo, setClusterInfo] = useState<Record<string, kafka.ClusterInfo>>({});
+
+    // Shared topic state between Consume and Produce pages: selecting a topic
+    // on one auto-selects on the other.
+    const [sharedTopic, setSharedTopic] = useState<string>("");
+
+    // Sidebar context menu.
+    const [sidebarCtx, setSidebarCtx] = useState<{ x: number; y: number; profile: profile.Profile } | null>(null);
+    const [helpOpen, setHelpOpen] = useState(false);
+
+    // Sidebar width — drag the splitter at its right edge to resize.
+    const sidebar = useResizableWidth("kfc.sidebar.width", 260);
+
+    const refreshProfiles = useCallback(async () => {
+        try {
+            const list = await ListProfiles();
+            setProfiles(list);
+            if (list.length > 0 && !list.find((p) => p.id === selectedId)) {
+                setSelectedId(list[0].id);
+            }
+            const next = new Set<string>();
+            for (const p of list) {
+                if (await IsConnected(p.id)) next.add(p.id);
+            }
+            setConnectedSet(next);
+        } catch (e) {
+            setToast(errString(e));
+        }
+    }, [selectedId]);
+
+    useEffect(() => { void refreshProfiles(); }, []);
+
+    // Reset the shared topic when the selected profile changes — topic names
+    // are not cross-profile valid.
+    useEffect(() => { setSharedTopic(""); }, [selectedId]);
+
+    useEffect(() => {
+        if (!toast) return;
+        const id = setTimeout(() => setToast(null), 3500);
+        return () => clearTimeout(id);
+    }, [toast]);
+
+    const fetchClusterInfo = useCallback(async (id: string) => {
+        try {
+            const info = await GetClusterInfo(id);
+            setClusterInfo((m) => ({ ...m, [id]: info }));
+        } catch {
+            // best-effort
+        }
+    }, []);
+
+    const handleConnect = async (id: string) => {
+        try {
+            await Connect(id);
+            setConnectedSet((s) => new Set(s).add(id));
+            void fetchClusterInfo(id);
+        } catch (e) {
+            setToast(errString(e));
+        }
+    };
+
+    const handleDisconnect = async (id: string) => {
+        try {
+            await Disconnect(id);
+            setConnectedSet((s) => {
+                const next = new Set(s);
+                next.delete(id);
+                return next;
+            });
+            setClusterInfo((m) => {
+                const next = { ...m };
+                delete next[id];
+                return next;
+            });
+        } catch (e) {
+            setToast(errString(e));
+        }
+    };
+
+    useEffect(() => {
+        for (const id of connectedSet) {
+            if (!clusterInfo[id]) void fetchClusterInfo(id);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [connectedSet]);
+
+    const handleDelete = async (id: string) => {
+        if (!confirm(t(lang, "profile.delete.confirm"))) return;
+        try {
+            await DeleteProfile(id);
+            await refreshProfiles();
+        } catch (e) {
+            setToast(errString(e));
+        }
+    };
+
+    const selected = profiles.find((p) => p.id === selectedId) ?? null;
+    const connected = selected ? connectedSet.has(selected.id) : false;
+
+    const sidebarCtxItems: ContextMenuItem[] = sidebarCtx
+        ? [
+            {
+                label: t(lang, "profile.menu.edit"),
+                onClick: () => setDialog({ open: true, editing: sidebarCtx.profile }),
+            },
+            {
+                label: t(lang, "profile.menu.delete"),
+                danger: true,
+                onClick: () => handleDelete(sidebarCtx.profile.id),
+            },
+        ]
+        : [];
+
+    return (
+        <div
+            className="app-root"
+            style={{ gridTemplateColumns: `${sidebar.width}px 6px 1fr` }}
+        >
+            <aside className="sidebar">
+                <div className="sidebar-header">
+                    <div className="brand">{t(lang, "app.title")}</div>
+                    <button className="primary small" onClick={() => setDialog({ open: true })}>
+                        + {t(lang, "sidebar.add")}
+                    </button>
+                </div>
+                <div className="sidebar-section-title">{t(lang, "sidebar.profiles")}</div>
+                <div className="profile-list">
+                    {profiles.length === 0 ? (
+                        <div className="empty muted">{t(lang, "sidebar.empty")}</div>
+                    ) : (
+                        profiles.map((p) => (
+                            <div
+                                key={p.id}
+                                className={"profile-item" + (p.id === selectedId ? " selected" : "")}
+                                onClick={() => setSelectedId(p.id)}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    setSidebarCtx({ x: e.clientX, y: e.clientY, profile: p });
+                                }}
+                            >
+                                <div className="profile-line1">
+                                    <span
+                                        className={"dot " + (connectedSet.has(p.id) ? "ok" : "off")}
+                                        title={
+                                            connectedSet.has(p.id)
+                                                ? t(lang, "sidebar.connected")
+                                                : t(lang, "sidebar.disconnected")
+                                        }
+                                    />
+                                    <span className="profile-name">{p.name}</span>
+                                </div>
+                                <div className="profile-line2 muted">{p.bootstrapServers.join(", ")}</div>
+                            </div>
+                        ))
+                    )}
+                </div>
+                <div style={{ padding: "8px 10px", borderTop: "1px solid var(--border)" }}>
+                    <button
+                        className="small"
+                        onClick={() => setHelpOpen(true)}
+                        style={{ width: "100%" }}
+                    >
+                        📖 {t(lang, "help.button")}
+                    </button>
+                </div>
+            </aside>
+
+            <VerticalSplitter
+                value={sidebar.width}
+                onChange={sidebar.setWidth}
+                min={180}
+                max={520}
+                direction="ltr"
+                onReset={sidebar.reset}
+            />
+
+            <main className="main">
+                <div className="topbar">
+                    {selected ? (
+                        <>
+                            <div className="topbar-title">
+                                {selected.name}
+                                {connected && clusterInfo[selected.id] && (
+                                    <span className="muted" style={{ fontSize: 12, marginLeft: 10, fontWeight: 400 }}>
+                                        ({t(lang, "topbar.controller")}: B{clusterInfo[selected.id].controller})
+                                    </span>
+                                )}
+                            </div>
+                            <div className="topbar-actions">
+                                {connected ? (
+                                    <button onClick={() => handleDisconnect(selected.id)}>
+                                        {t(lang, "sidebar.disconnect")}
+                                    </button>
+                                ) : (
+                                    <button className="primary" onClick={() => handleConnect(selected.id)}>
+                                        {t(lang, "sidebar.connect")}
+                                    </button>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="topbar-title muted">{t(lang, "status.no_profile")}</div>
+                    )}
+                </div>
+
+                <nav className="tabs">
+                    {(["topics", "consume", "produce", "settings"] as TabKey[]).map((k) => (
+                        <button
+                            key={k}
+                            className={"tab" + (tab === k ? " active" : "")}
+                            onClick={() => setTab(k)}
+                        >
+                            {t(lang, `tabs.${k}`)}
+                        </button>
+                    ))}
+                </nav>
+
+                <div className="content">
+                    {tab === "settings" ? (
+                        <SettingsPage lang={lang} setLang={setLang} onProfilesChanged={refreshProfiles} />
+                    ) : !selected || !connected ? (
+                        <div className="placeholder muted">
+                            {!selected ? t(lang, "status.no_profile") : t(lang, "status.connect_required")}
+                        </div>
+                    ) : tab === "topics" ? (
+                        <TopicsPage
+                            lang={lang}
+                            profileId={selected.id}
+                            onTick={() => void fetchClusterInfo(selected.id)}
+                        />
+                    ) : tab === "consume" ? (
+                        <ConsumePage
+                            lang={lang}
+                            profileId={selected.id}
+                            defaultTopic={selected.defaultTopic}
+                            topic={sharedTopic}
+                            onTopicChange={setSharedTopic}
+                        />
+                    ) : (
+                        <ProducePage
+                            lang={lang}
+                            profileId={selected.id}
+                            defaultTopic={selected.defaultTopic}
+                            topic={sharedTopic}
+                            onTopicChange={setSharedTopic}
+                        />
+                    )}
+                </div>
+            </main>
+
+            {dialog.open && (
+                <ProfileDialog
+                    lang={lang}
+                    editing={dialog.editing}
+                    onClose={() => setDialog({ open: false })}
+                    onSaved={async () => {
+                        setDialog({ open: false });
+                        await refreshProfiles();
+                    }}
+                />
+            )}
+
+            {sidebarCtx && (
+                <ContextMenu
+                    x={sidebarCtx.x}
+                    y={sidebarCtx.y}
+                    items={sidebarCtxItems}
+                    onClose={() => setSidebarCtx(null)}
+                />
+            )}
+
+            {helpOpen && <HelpDialog lang={lang} onClose={() => setHelpOpen(false)} />}
+
+            {toast && <div className="toast">{toast}</div>}
+        </div>
+    );
+}
