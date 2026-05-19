@@ -22,13 +22,16 @@ import { ProducePage } from "./pages/ProducePage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 type TabKey = "topics" | "consume" | "produce" | "settings";
-export type ThemePref = "light" | "dark" | "onion" | "system";
+export type ThemePref = "light" | "dark" | "onion" | "dark-onion" | "system";
 const THEME_KEY = "kfc.theme";
 
 import onionLogoColor from "./assets/onion/logo-color.png";
 import onionLogoWhite from "./assets/onion/logo-white.png";
+import onionLogoOrange from "./assets/onion/logo-orange.png";
 
-function resolveTheme(pref: ThemePref): "light" | "dark" | "onion" {
+type ResolvedTheme = "light" | "dark" | "onion" | "dark-onion";
+
+function resolveTheme(pref: ThemePref): ResolvedTheme {
     if (pref === "system") {
         return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     }
@@ -43,9 +46,11 @@ export default function App() {
     const [lang, setLang] = useState<Lang>("ko");
     const [themePref, setThemePref] = useState<ThemePref>(() => {
         const v = localStorage.getItem(THEME_KEY);
-        return v === "light" || v === "dark" || v === "onion" || v === "system" ? v : "system";
+        return v === "light" || v === "dark" || v === "onion" || v === "dark-onion" || v === "system"
+            ? v
+            : "system";
     });
-    const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark" | "onion">(() => resolveTheme(themePref));
+    const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveTheme(themePref));
 
     // Apply on mount + when pref changes; if "system", also listen for OS changes.
     useEffect(() => {
@@ -62,7 +67,10 @@ export default function App() {
         return () => mq.removeEventListener?.("change", onChange);
     }, [themePref]);
 
-    const logoSrc = resolvedTheme === "dark" ? onionLogoWhite : onionLogoColor;
+    const logoSrc =
+        resolvedTheme === "dark" ? onionLogoWhite :
+        resolvedTheme === "dark-onion" ? onionLogoOrange :
+        onionLogoColor;
     const [profiles, setProfiles] = useState<profile.Profile[]>([]);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [connectedSet, setConnectedSet] = useState<Set<string>>(new Set());

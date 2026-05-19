@@ -70,6 +70,7 @@ export function SettingsPage({ lang, setLang, themePref, setThemePref, onProfile
                     <option value="light">{t(lang, "settings.theme.light")}</option>
                     <option value="dark">{t(lang, "settings.theme.dark")}</option>
                     <option value="onion">{t(lang, "settings.theme.onion")}</option>
+                    <option value="dark-onion">{t(lang, "settings.theme.darkOnion")}</option>
                 </select>
             </div>
 
