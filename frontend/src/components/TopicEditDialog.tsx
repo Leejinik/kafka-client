@@ -162,7 +162,7 @@ export function TopicEditDialog({ lang, profileId, topic, onClose, onSaved }: Pr
                                                                 value={r.sensitive && r.value === "" ? "(sensitive)" : r.value}
                                                                 disabled={r.sensitive && r.value === ""}
                                                                 onChange={(e) => updateRow(i, e.target.value)}
-                                                                style={changed ? { borderColor: "var(--accent)", background: "#eef4ff" } : undefined}
+                                                                style={changed ? { borderColor: "var(--accent)", background: "var(--accent-soft-bg)" } : undefined}
                                                             />
                                                         </td>
                                                         <td className="muted" style={{ fontSize: 11 }}>{r.source.replace(/_CONFIG$/, "")}</td>

@@ -2,14 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { Lang, t } from "../lib/i18n";
 import { errString } from "../lib/errors";
 import { ConfigDir, ExportProfiles, ImportProfiles } from "../../wailsjs/go/main/App";
+import type { ThemePref } from "../App";
 
 interface Props {
     lang: Lang;
     setLang: (l: Lang) => void;
+    themePref: ThemePref;
+    setThemePref: (t: ThemePref) => void;
     onProfilesChanged: () => Promise<void> | void;
 }
 
-export function SettingsPage({ lang, setLang, onProfilesChanged }: Props) {
+export function SettingsPage({ lang, setLang, themePref, setThemePref, onProfilesChanged }: Props) {
     const [configDir, setConfigDir] = useState("");
     const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -53,6 +56,20 @@ export function SettingsPage({ lang, setLang, onProfilesChanged }: Props) {
                 <select value={lang} onChange={(e) => setLang(e.target.value as Lang)} style={{ width: 220 }}>
                     <option value="ko">{t(lang, "settings.lang.ko")}</option>
                     <option value="en">{t(lang, "settings.lang.en")}</option>
+                </select>
+            </div>
+
+            <div className="form-row">
+                <label>{t(lang, "settings.theme")}</label>
+                <select
+                    value={themePref}
+                    onChange={(e) => setThemePref(e.target.value as ThemePref)}
+                    style={{ width: 220 }}
+                >
+                    <option value="system">{t(lang, "settings.theme.system")}</option>
+                    <option value="light">{t(lang, "settings.theme.light")}</option>
+                    <option value="dark">{t(lang, "settings.theme.dark")}</option>
+                    <option value="onion">{t(lang, "settings.theme.onion")}</option>
                 </select>
             </div>
 

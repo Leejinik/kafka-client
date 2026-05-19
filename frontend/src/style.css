@@ -1,20 +1,86 @@
 :root {
     color-scheme: light;
+    /* Surface */
     --bg: #f6f7fb;
     --panel: #ffffff;
     --panel-2: #f0f2f7;
     --border: #d8dde6;
+    /* Text */
     --text: #1f2937;
     --text-dim: #6b7280;
+    /* Brand */
     --accent: #2f6fed;
     --accent-hover: #2558c7;
+    --accent-soft-bg: #eef4ff;
+    --accent-soft-border: #c5d6f7;
+    /* States */
     --danger: #d64545;
+    --danger-hover: #b53939;
     --ok: #16a34a;
     --warn: #d97706;
+    --warn-soft-bg: #fff7ed;
+    --warn-soft-border: #fed7aa;
+    --warn-soft-text: #7c2d12;
+    /* Misc */
+    --row-changed-bg: #fff7ed;
+    --selected-bg: rgba(47, 111, 237, 0.08);
+    --ctx-danger-hover: #fdecec;
     --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.06);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
         "Malgun Gothic", "Noto Sans KR", Roboto, "Helvetica Neue", sans-serif;
     font-size: 13px;
+}
+
+:root[data-theme="onion"] {
+    color-scheme: light;
+    /* Warm cream surface to match the Onion brand */
+    --bg: #faf8f4;
+    --panel: #ffffff;
+    --panel-2: #f3eee5;
+    --border: #e4ddd1;
+    --text: #2a2520;
+    --text-dim: #7a6f63;
+    /* Brand orange from ONION CI Guideline v1.0 (HEX FF9425) */
+    --accent: #ff9425;
+    --accent-hover: #e57f1c;
+    --accent-soft-bg: #fef2e5;
+    --accent-soft-border: #fbd0a3;
+    --danger: #d64545;
+    --danger-hover: #b53939;
+    --ok: #16a34a;
+    --warn: #d97706;
+    --warn-soft-bg: #fff7ed;
+    --warn-soft-border: #fed7aa;
+    --warn-soft-text: #7c2d12;
+    --row-changed-bg: #fef2e5;
+    --selected-bg: rgba(255, 148, 37, 0.14);
+    --ctx-danger-hover: #fdecec;
+    --shadow: 0 1px 2px rgba(80, 50, 20, 0.06), 0 4px 12px rgba(80, 50, 20, 0.08);
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-2: #273548;
+    --border: #334155;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --accent: #60a5fa;
+    --accent-hover: #93c5fd;
+    --accent-soft-bg: rgba(96, 165, 250, 0.14);
+    --accent-soft-border: rgba(96, 165, 250, 0.45);
+    --danger: #f87171;
+    --danger-hover: #ef4444;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --warn-soft-bg: rgba(251, 191, 36, 0.12);
+    --warn-soft-border: rgba(251, 191, 36, 0.45);
+    --warn-soft-text: #fde68a;
+    --row-changed-bg: rgba(251, 191, 36, 0.12);
+    --selected-bg: rgba(96, 165, 250, 0.18);
+    --ctx-danger-hover: rgba(248, 113, 113, 0.18);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.5);
 }
 
 * { box-sizing: border-box; }
@@ -53,7 +119,7 @@ button.danger {
     color: white;
     border-color: var(--danger);
 }
-button.danger:hover:not(:disabled) { background: #b53939; border-color: #b53939; }
+button.danger:hover:not(:disabled) { background: var(--danger-hover); border-color: var(--danger-hover); }
 
 input, select, textarea {
     font-family: inherit;

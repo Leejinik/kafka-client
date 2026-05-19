@@ -119,7 +119,7 @@ export function GroupResetOffsetsDialog({
                     </div>
 
                     {isActive && (
-                        <div style={{ color: "var(--warn)", fontSize: 12, padding: "8px 10px", border: "1px solid var(--warn)", borderRadius: 6, background: "#fffbeb" }}>
+                        <div style={{ color: "var(--warn)", fontSize: 12, padding: "8px 10px", border: "1px solid var(--warn)", borderRadius: 6, background: "var(--warn-soft-bg)" }}>
                             ⚠ {t(lang, "group.activeBlocked")}
                         </div>
                     )}

@@ -22,9 +22,47 @@ import { ProducePage } from "./pages/ProducePage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 type TabKey = "topics" | "consume" | "produce" | "settings";
+export type ThemePref = "light" | "dark" | "onion" | "system";
+const THEME_KEY = "kfc.theme";
+
+import onionLogoColor from "./assets/onion/logo-color.png";
+import onionLogoWhite from "./assets/onion/logo-white.png";
+
+function resolveTheme(pref: ThemePref): "light" | "dark" | "onion" {
+    if (pref === "system") {
+        return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    return pref;
+}
+
+function applyTheme(pref: ThemePref) {
+    document.documentElement.dataset.theme = resolveTheme(pref);
+}
 
 export default function App() {
     const [lang, setLang] = useState<Lang>("ko");
+    const [themePref, setThemePref] = useState<ThemePref>(() => {
+        const v = localStorage.getItem(THEME_KEY);
+        return v === "light" || v === "dark" || v === "onion" || v === "system" ? v : "system";
+    });
+    const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark" | "onion">(() => resolveTheme(themePref));
+
+    // Apply on mount + when pref changes; if "system", also listen for OS changes.
+    useEffect(() => {
+        applyTheme(themePref);
+        setResolvedTheme(resolveTheme(themePref));
+        try { localStorage.setItem(THEME_KEY, themePref); } catch {}
+        if (themePref !== "system") return;
+        const mq = window.matchMedia("(prefers-color-scheme: dark)");
+        const onChange = () => {
+            applyTheme("system");
+            setResolvedTheme(resolveTheme("system"));
+        };
+        mq.addEventListener?.("change", onChange);
+        return () => mq.removeEventListener?.("change", onChange);
+    }, [themePref]);
+
+    const logoSrc = resolvedTheme === "dark" ? onionLogoWhite : onionLogoColor;
     const [profiles, setProfiles] = useState<profile.Profile[]>([]);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [connectedSet, setConnectedSet] = useState<Set<string>>(new Set());
@@ -151,11 +189,17 @@ export default function App() {
         >
             <aside className="sidebar">
                 <div className="sidebar-header">
-                    <div className="brand">{t(lang, "app.title")}</div>
+                    <img
+                        src={logoSrc}
+                        alt="ONION"
+                        className="brand-logo"
+                        title={t(lang, "app.title")}
+                    />
                     <button className="primary small" onClick={() => setDialog({ open: true })}>
                         + {t(lang, "sidebar.add")}
                     </button>
                 </div>
+                <div className="sidebar-tagline">{t(lang, "app.title")}</div>
                 <div className="sidebar-section-title">{t(lang, "sidebar.profiles")}</div>
                 <div className="profile-list">
                     {profiles.length === 0 ? (
@@ -250,7 +294,13 @@ export default function App() {
 
                 <div className="content">
                     {tab === "settings" ? (
-                        <SettingsPage lang={lang} setLang={setLang} onProfilesChanged={refreshProfiles} />
+                        <SettingsPage
+                            lang={lang}
+                            setLang={setLang}
+                            themePref={themePref}
+                            setThemePref={setThemePref}
+                            onProfilesChanged={refreshProfiles}
+                        />
                     ) : !selected || !connected ? (
                         <div className="placeholder muted">
                             {!selected ? t(lang, "status.no_profile") : t(lang, "status.connect_required")}

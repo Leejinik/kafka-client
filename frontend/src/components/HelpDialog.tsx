@@ -106,8 +106,9 @@ export function HelpDialog({ lang, onClose }: Props) {
 const Box: React.FC<{ kind: "tip" | "warn"; children: React.ReactNode }> = ({ kind, children }) => (
     <div
         style={{
-            background: kind === "tip" ? "#eef4ff" : "#fff7ed",
+            background: kind === "tip" ? "var(--accent-soft-bg)" : "var(--warn-soft-bg)",
             borderLeft: `3px solid ${kind === "tip" ? "var(--accent)" : "var(--warn)"}`,
+            color: "var(--text)",
             borderRadius: 4,
             padding: "8px 12px",
             margin: "10px 0",

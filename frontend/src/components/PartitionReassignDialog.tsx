@@ -383,7 +383,7 @@ function Chip({
         cursor: isDragging ? "grabbing" : "grab",
         userSelect: "none",
         border: isLeader ? "1.5px solid var(--accent)" : "1px solid var(--border)",
-        background: swapped ? "#fff7ed" : isLeader ? "#eef4ff" : "var(--panel)",
+        background: swapped ? "var(--warn-soft-bg)" : isLeader ? "var(--accent-soft-bg)" : "var(--panel)",
         fontWeight: isLeader ? 600 : 400,
         color: swapped ? "var(--warn)" : undefined,
         opacity: isDragging ? 0.6 : 1,
