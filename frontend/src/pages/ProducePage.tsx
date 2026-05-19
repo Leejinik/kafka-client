@@ -6,6 +6,7 @@ import { kafka } from "../../wailsjs/go/models";
 import { LoadMessageDialog } from "../components/LoadMessageDialog";
 import { SavedMessage, headersToText } from "../lib/savedMessages";
 import { TimestampConverter } from "../components/TimestampConverter";
+import { LoopProduceDialog } from "../components/LoopProduceDialog";
 
 interface Props {
     lang: Lang;
@@ -48,6 +49,7 @@ export function ProducePage({ lang, profileId, defaultTopic, topic, onTopicChang
     const [busy, setBusy] = useState(false);
     const [result, setResult] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
     const [loadDialog, setLoadDialog] = useState(false);
+    const [loopDialog, setLoopDialog] = useState(false);
 
     const handleLoad = (m: SavedMessage) => {
         // If the saved topic doesn't exist in the current cluster's list,
@@ -123,6 +125,9 @@ export function ProducePage({ lang, profileId, defaultTopic, topic, onTopicChang
                 <button onClick={() => setLoadDialog(true)} title={t(lang, "saved.load.title")}>
                     {t(lang, "saved.load.button")}
                 </button>
+                <button onClick={() => setLoopDialog(true)} disabled={!topic} title={t(lang, "loop.title")}>
+                    {t(lang, "loop.button")}
+                </button>
                 <button className="primary" onClick={handleSend} disabled={busy || !topic}>
                     {busy ? t(lang, "produce.sending") : t(lang, "produce.send")}
                 </button>
@@ -134,6 +139,19 @@ export function ProducePage({ lang, profileId, defaultTopic, topic, onTopicChang
                     lang={lang}
                     onClose={() => setLoadDialog(false)}
                     onLoad={handleLoad}
+                />
+            )}
+
+            {loopDialog && (
+                <LoopProduceDialog
+                    lang={lang}
+                    profileId={profileId}
+                    topic={topic}
+                    partition={partition}
+                    keyStr={key}
+                    value={value}
+                    headers={parseHeaders(headersText)}
+                    onClose={() => setLoopDialog(false)}
                 />
             )}
 

@@ -13,6 +13,7 @@ import {
 import { ContextMenu } from "../components/ContextMenu";
 import { SaveMessageDialog } from "../components/SaveMessageDialog";
 import { TimestampConverter } from "../components/TimestampConverter";
+import { formatLocalHuman, withMsTooltips } from "../lib/formatTime";
 
 const COLUMNS: ColumnDef[] = [
     { key: "p",         label: "P",         defaultWidth: 60,  minWidth: 40 },
@@ -61,6 +62,12 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     const [rowCtxMenu, setRowCtxMenu] = useState<{ x: number; y: number; message: kafka.Message } | null>(null);
     const [saveDialog, setSaveDialog] = useState<kafka.Message | null>(null);
     const [savedToast, setSavedToast] = useState<string | null>(null);
+    // null = original fetch order; cycle: null → "desc" → "asc" → null on header click
+    const [tsSort, setTsSort] = useState<"asc" | "desc" | null>(null);
+
+    const cycleTsSort = () => {
+        setTsSort((s) => (s === null ? "desc" : s === "desc" ? "asc" : null));
+    };
 
     useEffect(() => { localStorage.setItem(TS_FORMAT_KEY, tsFormat); }, [tsFormat]);
 
@@ -96,27 +103,36 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [profileId]);
 
+    const sortedMessages = useMemo(() => {
+        if (!tsSort) return messages;
+        const arr = [...messages];
+        arr.sort((a, b) =>
+            tsSort === "asc" ? a.timestampMs - b.timestampMs : b.timestampMs - a.timestampMs,
+        );
+        return arr;
+    }, [messages, tsSort]);
+
     const filtered = useMemo(() => {
         const q = search.trim();
-        if (!q) return messages;
+        if (!q) return sortedMessages;
         let matcher: (s: string) => boolean;
         if (useRegex) {
             try {
                 const re = new RegExp(q, caseSensitive ? "" : "i");
                 matcher = (s) => re.test(s);
             } catch {
-                return messages;
+                return sortedMessages;
             }
         } else {
             const needle = caseSensitive ? q : q.toLowerCase();
             matcher = (s) => (caseSensitive ? s : s.toLowerCase()).includes(needle);
         }
-        return messages.filter((m) => {
+        return sortedMessages.filter((m) => {
             if (target === "value") return matcher(m.value);
             if (target === "key") return matcher(m.key);
             return Object.entries(m.headers).some(([k, v]) => matcher(`${k}=${v}`));
         });
-    }, [messages, search, useRegex, caseSensitive, target]);
+    }, [sortedMessages, search, useRegex, caseSensitive, target]);
 
     const visible = filtered.slice(viewport.start, viewport.end);
     const padTop = viewport.start * ROW_HEIGHT;
@@ -287,7 +303,12 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                         onResize={(w) => setWidth(c.key, w)}
                                         onReset={() => resetWidth(c.key)}
                                         onContextMenu={c.key === "timestamp" ? openTsCtxMenu : undefined}
-                                    />
+                                        onClick={c.key === "timestamp" ? cycleTsSort : undefined}
+                                    >
+                                        {c.key === "timestamp"
+                                            ? `${c.label}${tsSort === "desc" ? " ▼" : tsSort === "asc" ? " ▲" : ""}`
+                                            : c.label}
+                                    </ResizableTh>
                                 ))}
                             </tr>
                         </thead>
@@ -323,9 +344,9 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                             >
                                                 <td style={cellStyle}>{m.partition}</td>
                                                 <td className="mono" style={cellStyle}>{m.offset}</td>
-                                                <td className="mono" style={cellStyle} onContextMenu={openTsCtxMenu}>{formatTs(m.timestampMs)}</td>
+                                                <td className="mono" style={cellStyle} onContextMenu={openTsCtxMenu} title={formatLocalHuman(m.timestampMs)}>{formatTs(m.timestampMs)}</td>
                                                 <td className="mono" style={cellStyle}>{m.key}</td>
-                                                <td className="mono" style={cellStyle}>{m.value}</td>
+                                                <td className="mono" style={cellStyle}>{withMsTooltips(m.value)}</td>
                                             </tr>
                                         );
                                     })}
@@ -363,14 +384,14 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                 </div>
                                 <div className="detail-row">
                                     <span className="label">{t(lang, "consume.detail.value")}</span>
-                                    <span className="value">{formatJson(selected.value)}</span>
+                                    <span className="value">{withMsTooltips(formatJson(selected.value))}</span>
                                 </div>
                                 <div className="detail-row">
                                     <span className="label">{t(lang, "consume.detail.headers")}</span>
                                     <span className="value">
                                         {Object.keys(selected.headers).length === 0
                                             ? t(lang, "common.none")
-                                            : Object.entries(selected.headers).map(([k, v]) => `${k}=${v}`).join("\n")}
+                                            : withMsTooltips(Object.entries(selected.headers).map(([k, v]) => `${k}=${v}`).join("\n"))}
                                     </span>
                                 </div>
                             </>

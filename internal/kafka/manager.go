@@ -81,6 +81,13 @@ func (m *Manager) Connect(ctx context.Context, profileID string, servers []strin
 		kgo.MetadataMinAge(5*time.Second),
 		kgo.DialTimeout(10*time.Second),
 		kgo.Dialer(aliasDialer(aliases)),
+		// Disable producer-side batch compression. franz-go defaults to Snappy,
+		// which breaks on brokers whose JVM cannot load the xerial snappy
+		// native library (observed: UNKNOWN_SERVER_ERROR with a
+		// NoClassDefFoundError on org.xerial.snappy.Snappy in the broker log).
+		// NoCompression is safe everywhere; this tool produces single messages,
+		// so we don't care about batch throughput.
+		kgo.ProducerBatchCompression(kgo.NoCompression()),
 	)
 	if err != nil {
 		return fmt.Errorf("create client: %w", err)
@@ -149,6 +156,7 @@ func (m *Manager) Test(ctx context.Context, servers []string, aliases map[string
 		kgo.DialTimeout(5*time.Second),
 		kgo.Dialer(aliasDialer(aliases)),
 		kgo.ClientID("kafka-client-tool-test"),
+		kgo.ProducerBatchCompression(kgo.NoCompression()),
 	)
 	if err != nil {
 		return err

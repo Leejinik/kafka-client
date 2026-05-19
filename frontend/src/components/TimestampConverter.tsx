@@ -1,31 +1,6 @@
 import { useState } from "react";
 import { Lang, t } from "../lib/i18n";
-
-function pad(n: number, w = 2): string {
-    return String(n).padStart(w, "0");
-}
-
-function formatLocalHuman(ms: number): string {
-    const d = new Date(ms);
-    if (Number.isNaN(d.getTime())) return "";
-    return (
-        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-        `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`
-    );
-}
-
-// Parse permissively. Accepts "YYYY MM DD HH:MM:SS.sss", "YYYY-MM-DD HH:MM:SS.sss",
-// ISO with T, with or without milliseconds. Treats unqualified times as local.
-function parseHuman(s: string): number | null {
-    const t = s.trim();
-    if (!t) return null;
-    const norm = t.replace(
-        /^(\d{4})[-\s/.](\d{1,2})[-\s/.](\d{1,2})([\sT]+)/,
-        (_m, y, mo, d) => `${y}-${pad(Number(mo))}-${pad(Number(d))}T`,
-    );
-    const ms = Date.parse(norm);
-    return Number.isNaN(ms) ? null : ms;
-}
+import { formatLocalHuman, parseHuman } from "../lib/formatTime";
 
 interface Props {
     lang: Lang;

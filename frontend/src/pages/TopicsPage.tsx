@@ -690,7 +690,11 @@ function GroupCard({
                                     <td className="mono">{m.memberId}</td>
                                     <td className="mono">{m.clientId || "—"}</td>
                                     <td className="mono">{m.clientHost || "—"}</td>
-                                    <td className="mono">{m.partitions.join(", ")}</td>
+                                    <td className="mono">
+                                        {m.partitions.length === 0
+                                            ? <span className="muted">{t(lang, "topics.member.standby")}</span>
+                                            : m.partitions.join(", ")}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>

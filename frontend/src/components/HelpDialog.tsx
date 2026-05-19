@@ -23,6 +23,13 @@ export function HelpDialog({ lang, onClose }: Props) {
         const el = bodyRef.current;
         if (!el) return;
         const onScroll = () => {
+            // Scrolled to (or near) the bottom → pin the last section.
+            // Without this, short final sections never get to "scroll past the
+            // top edge" so the nav never highlights them.
+            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 4) {
+                setActive(sections[sections.length - 1].id);
+                return;
+            }
             const top = el.scrollTop + 8;
             let cur = sections[0].id;
             for (const s of sections) {
@@ -179,7 +186,13 @@ function buildSectionsKo(): Section[] {
             body: (
                 <>
                     <p>모드: <b>처음부터 / 끝에서 / 오프셋 / 타임스탬프</b>.</p>
-                    <p>Timestamp 컬럼 우클릭으로 <b>현지 시간 ↔ Unix ms</b> 전환 (선택 영속).</p>
+                    <p>Timestamp 컬럼:</p>
+                    <ul>
+                        <li><b>헤더 클릭</b> → 정렬 cycle (없음 → 내림차순 ▼ → 오름차순 ▲ → 없음)</li>
+                        <li><b>헤더 우클릭</b> → 현지 시간 ↔ Unix ms 표시 전환</li>
+                        <li><b>셀 hover</b> → 밀리초까지 풀 정밀도 시간 툴팁</li>
+                    </ul>
+                    <p><b>Value 안의 13자리 숫자</b>는 자동으로 unix ms로 인식되어 점선 밑줄 표시 + hover 시 사람 시간 툴팁 (그리드 + 디테일 패널 둘 다).</p>
                     <p>행 우클릭 → <b>저장하기</b> → 발행 탭에서 꺼내 씁니다.</p>
                     <p>디테일 패널 하단에 Unix ms ↔ 사람 시간 변환기 있음.</p>
                 </>
@@ -190,7 +203,7 @@ function buildSectionsKo(): Section[] {
             title: "6. 발행",
             body: (
                 <>
-                    <p>토픽 선택 → 키/값/헤더 입력 → 발행.</p>
+                    <p>토픽 선택 → 키/값/헤더 입력 → [발행].</p>
                     <Box kind="tip">
                         <b>실수 줄이는 워크플로우</b>
                         <ol style={{ margin: "6px 0 0 18px" }}>
@@ -200,7 +213,13 @@ function buildSectionsKo(): Section[] {
                             <li>바꿀 부분만 수정 → 발행</li>
                         </ol>
                     </Box>
-                    <p>저장된 메시지는 [불러오기] 다이얼로그에서 내보내기/가져오기로 백업·공유 가능.</p>
+                    <p><b>[불러오기]</b> 시 value가 JSON이면 자동으로 들여쓰기되어 수정하기 쉬워집니다. 저장 목록은 [내보내기]/[가져오기]로 백업·공유 가능.</p>
+                    <p><b>[반복 발행]</b> — 현재 폼의 메시지를 반복 발행:</p>
+                    <ul>
+                        <li><b>최대 속도</b> — 가능한 한 빠르게 비동기 발행. 종료 조건은 건수 또는 시간. broker 가용 capacity 측정용</li>
+                        <li><b>간격 발행</b> — N초/ms마다 1건. 컨슈머 트리거 / 흐름 확인용</li>
+                        <li>다이얼로그 닫으면 자동 중지. 발행/실패/속도/경과 실시간 표시</li>
+                    </ul>
                     <p>파티션 <M>-1</M>이면 키 해시 / 라운드로빈으로 자동 배정. 특정 파티션 강제 시 0, 1, 2 ...</p>
                 </>
             ),
@@ -218,6 +237,7 @@ function buildSectionsKo(): Section[] {
                         <li><b>그룹 삭제</b> — committed offsets 전부 사라짐</li>
                         <li><b>Offset → earliest/latest</b> — 누락 또는 재처리 발생</li>
                         <li><b>파티션 재할당</b> — 대용량 데이터 이동, 클러스터 부하</li>
+                        <li><b>반복 발행 (최대 속도)</b> — 안전장치 없음. 운영 토픽에 무한히 폭주할 수 있음</li>
                     </ul>
                 </>
             ),
@@ -280,7 +300,13 @@ function buildSectionsEn(): Section[] {
             body: (
                 <>
                     <p>Modes: <b>Beginning / End / Offset / Timestamp</b>.</p>
-                    <p>Right-click the Timestamp column to toggle local time vs. Unix ms.</p>
+                    <p>Timestamp column:</p>
+                    <ul>
+                        <li><b>Click header</b> → sort cycle (none → desc ▼ → asc ▲ → none)</li>
+                        <li><b>Right-click header</b> → toggle local time / Unix ms</li>
+                        <li><b>Hover a cell</b> → full-precision time tooltip</li>
+                    </ul>
+                    <p>Any <b>13-digit number inside Value</b> is auto-detected as unix ms (dotted underline + hover tooltip), in both grid and detail panel.</p>
                     <p>Right-click a row → <b>Save</b>, then pull it from the Produce tab's Load button.</p>
                 </>
             ),
@@ -300,6 +326,13 @@ function buildSectionsEn(): Section[] {
                             <li>Edit only what differs → Send</li>
                         </ol>
                     </Box>
+                    <p><b>[Load]</b> auto-formats JSON values for easier editing. Saved list can be exported/imported.</p>
+                    <p><b>[Loop produce]</b> — repeat the current form's message:</p>
+                    <ul>
+                        <li><b>Max throughput</b> — async firehose. Stop on count or duration. Measures broker capacity</li>
+                        <li><b>Interval</b> — one message every N ms/sec. For triggering consumers</li>
+                        <li>Closing the dialog auto-stops. Live counters: sent / failed / rate / elapsed</li>
+                    </ul>
                     <p>Use partition <M>-1</M> for auto (key hash / round-robin), or a specific partition number to force placement.</p>
                 </>
             ),
@@ -317,6 +350,7 @@ function buildSectionsEn(): Section[] {
                         <li><b>Delete group</b> — loses all committed offsets</li>
                         <li><b>Reset to earliest / latest</b> — gaps or re-processing</li>
                         <li><b>Reassignment</b> — heavy data movement</li>
+                        <li><b>Loop produce (max throughput)</b> — no safety limit; can flood a prod topic</li>
                     </ul>
                 </>
             ),

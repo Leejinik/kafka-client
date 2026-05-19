@@ -119,12 +119,16 @@ func (m *Manager) ListGroupsForTopic(ctx context.Context, profileID, topic strin
 		sort.Slice(parts, func(i, j int) bool { return parts[i].Partition < parts[j].Partition })
 		view.Partitions = parts
 
-		// Members assigned to this topic.
+		// Every live member of the group, even ones that haven't been assigned
+		// any partition of THIS topic. Standby members in a 1-active + N-standby
+		// setup show up here with an empty Partitions slice.
 		seen := make(map[string]int)
 		for _, mem := range dl.Members {
 			assigned := assignedPartitionsFor(mem, topic)
-			if len(assigned) == 0 {
-				continue
+			// Normalise nil → empty slice so JSON marshals `[]` not `null`;
+			// the frontend reads .length and would crash on null.
+			if assigned == nil {
+				assigned = []int32{}
 			}
 			id := mem.MemberID
 			if idx, ok := seen[id]; ok {
@@ -144,7 +148,14 @@ func (m *Manager) ListGroupsForTopic(ctx context.Context, profileID, topic strin
 			seen[id] = len(view.Members)
 			view.Members = append(view.Members, mv)
 		}
+		// Active members (those with at least one partition of this topic) come
+		// first, then standby members; within each group, sort by MemberID.
 		sort.Slice(view.Members, func(i, j int) bool {
+			iActive := len(view.Members[i].Partitions) > 0
+			jActive := len(view.Members[j].Partitions) > 0
+			if iActive != jActive {
+				return iActive
+			}
 			return view.Members[i].MemberID < view.Members[j].MemberID
 		})
 		for i := range view.Members {

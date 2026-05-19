@@ -190,3 +190,17 @@ func (a *App) Consume(profileID string, opts kafka.ConsumeOptions) ([]kafka.Mess
 func (a *App) Produce(profileID string, req kafka.ProduceRequest) (kafka.ProduceResult, error) {
 	return a.manager.Produce(a.ctx, profileID, req)
 }
+
+// --- Loop produce -------------------------------------------------------
+
+func (a *App) StartLoopProduce(profileID string, opts kafka.LoopProduceOptions) error {
+	return a.manager.StartLoopProduce(a.ctx, profileID, opts)
+}
+
+func (a *App) StopLoopProduce(profileID string) {
+	a.manager.StopLoopProduce(profileID)
+}
+
+func (a *App) GetLoopProduceStatus(profileID string) kafka.LoopProduceStatus {
+	return a.manager.GetLoopProduceStatus(profileID)
+}

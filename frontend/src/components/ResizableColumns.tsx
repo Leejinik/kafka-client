@@ -54,10 +54,11 @@ interface HeaderProps {
     onResize: (w: number) => void;
     onReset: () => void;
     onContextMenu?: (e: React.MouseEvent) => void;
+    onClick?: (e: React.MouseEvent) => void;
     children?: React.ReactNode;
 }
 
-export function ResizableTh({ column, width, onResize, onReset, onContextMenu, children }: HeaderProps) {
+export function ResizableTh({ column, width, onResize, onReset, onContextMenu, onClick, children }: HeaderProps) {
     const dragging = useRef<{ startX: number; startW: number } | null>(null);
     const [active, setActive] = useState(false);
 
@@ -103,7 +104,11 @@ export function ResizableTh({ column, width, onResize, onReset, onContextMenu, c
     const showHandle = !column.grow;
 
     return (
-        <th style={{ position: "relative", overflow: "hidden" }} onContextMenu={onContextMenu}>
+        <th
+            style={{ position: "relative", overflow: "hidden", cursor: onClick ? "pointer" : undefined, userSelect: "none" }}
+            onContextMenu={onContextMenu}
+            onClick={onClick}
+        >
             <span style={{ display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "calc(100% - 8px)" }}>
                 {children ?? column.label}
             </span>
