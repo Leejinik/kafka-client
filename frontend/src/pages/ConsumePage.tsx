@@ -11,6 +11,7 @@ import {
     useColumnWidths,
     useResizableWidth,
 } from "../components/ResizableColumns";
+import { AdvancedSearchDialog } from "../components/AdvancedSearchDialog";
 import { ContextMenu } from "../components/ContextMenu";
 import { SaveMessageDialog } from "../components/SaveMessageDialog";
 import { TimestampConverter } from "../components/TimestampConverter";
@@ -83,6 +84,17 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     const [target, setTarget] = useState<Target>("value");
     const [useRegex, setUseRegex] = useState(false);
     const [caseSensitive, setCaseSensitive] = useState(false);
+
+    // Advanced search: each card holds a list of CSV-parsed tokens. A message
+    // matches the card iff its target field contains every token as a
+    // case-insensitive substring. Cards are independent — each renders its
+    // own count; the grid itself is NOT filtered (only the basic search
+    // input filters). Max 5 cards.
+    type SearchCard = { id: number; tokens: string[] };
+    const [advancedSearch, setAdvancedSearch] = useState(false);
+    const [searchCards, setSearchCards] = useState<SearchCard[]>([{ id: 1, tokens: [] }]);
+    const [editingCardId, setEditingCardId] = useState<number | null>(null);
+    const nextCardIdRef = useRef(2);
     const [tsFormat, setTsFormat] = useState<TsFormat>(() => {
         const v = localStorage.getItem(TS_FORMAT_KEY);
         return v === "unix" ? "unix" : "local";
@@ -254,7 +266,18 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         return arr;
     }, [messages, sort]);
 
+    // Extract the haystack string for the current target. Headers are
+    // joined into a single "k=v\nk=v" blob so token containment naturally
+    // works the same way as for value/key.
+    const haystackOf = (m: kafka.Message): string => {
+        if (target === "value") return m.value;
+        if (target === "key") return m.key;
+        return Object.entries(m.headers).map(([k, v]) => `${k}=${v}`).join("\n");
+    };
+
     const filtered = useMemo(() => {
+        // Advanced search mode: counts are shown per card, grid is unfiltered.
+        if (advancedSearch) return sortedMessages;
         const q = search.trim();
         if (!q) return sortedMessages;
         let matcher: (s: string) => boolean;
@@ -269,12 +292,25 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
             const needle = caseSensitive ? q : q.toLowerCase();
             matcher = (s) => (caseSensitive ? s : s.toLowerCase()).includes(needle);
         }
-        return sortedMessages.filter((m) => {
-            if (target === "value") return matcher(m.value);
-            if (target === "key") return matcher(m.key);
-            return Object.entries(m.headers).some(([k, v]) => matcher(`${k}=${v}`));
+        return sortedMessages.filter((m) => matcher(haystackOf(m)));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [advancedSearch, sortedMessages, search, useRegex, caseSensitive, target]);
+
+    // Per-card match counts. A card with no tokens reports 0.
+    const cardCounts = useMemo(() => {
+        if (!advancedSearch) return [];
+        const haystacks = messages.map((m) => haystackOf(m).toLowerCase());
+        return searchCards.map((card) => {
+            if (card.tokens.length === 0) return 0;
+            const lower = card.tokens.map((t) => t.toLowerCase());
+            let n = 0;
+            for (const h of haystacks) {
+                if (lower.every((t) => h.includes(t))) n++;
+            }
+            return n;
         });
-    }, [sortedMessages, search, useRegex, caseSensitive, target]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [advancedSearch, messages, searchCards, target]);
 
     const visible = filtered.slice(viewport.start, viewport.end);
     const padTop = viewport.start * ROW_HEIGHT;
@@ -619,25 +655,71 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
             </div>
 
             <div className="page-toolbar">
-                <input
-                    className="grow"
-                    placeholder={t(lang, "consume.search")}
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                />
-                <select value={target} onChange={(e) => setTarget(e.target.value as Target)} style={{ width: 100 }}>
-                    <option value="value">{t(lang, "consume.target.value")}</option>
-                    <option value="key">{t(lang, "consume.target.key")}</option>
-                    <option value="headers">{t(lang, "consume.target.headers")}</option>
-                </select>
-                <label className="checkbox">
-                    <input type="checkbox" checked={useRegex} onChange={(e) => setUseRegex(e.target.checked)} />
-                    {t(lang, "consume.regex")}
-                </label>
-                <label className="checkbox">
-                    <input type="checkbox" checked={caseSensitive} onChange={(e) => setCaseSensitive(e.target.checked)} />
-                    {t(lang, "consume.case")}
-                </label>
+                {!advancedSearch ? (
+                    <>
+                        <input
+                            className="grow"
+                            placeholder={t(lang, "consume.search")}
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                        />
+                        <select value={target} onChange={(e) => setTarget(e.target.value as Target)} style={{ width: 100 }}>
+                            <option value="value">{t(lang, "consume.target.value")}</option>
+                            <option value="key">{t(lang, "consume.target.key")}</option>
+                            <option value="headers">{t(lang, "consume.target.headers")}</option>
+                        </select>
+                        <label className="checkbox">
+                            <input type="checkbox" checked={useRegex} onChange={(e) => setUseRegex(e.target.checked)} />
+                            {t(lang, "consume.regex")}
+                        </label>
+                        <label className="checkbox">
+                            <input type="checkbox" checked={caseSensitive} onChange={(e) => setCaseSensitive(e.target.checked)} />
+                            {t(lang, "consume.case")}
+                        </label>
+                        <button onClick={() => setAdvancedSearch(true)}>
+                            {t(lang, "consume.advanced")}
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <select value={target} onChange={(e) => setTarget(e.target.value as Target)} style={{ width: 100 }}>
+                            <option value="value">{t(lang, "consume.target.value")}</option>
+                            <option value="key">{t(lang, "consume.target.key")}</option>
+                            <option value="headers">{t(lang, "consume.target.headers")}</option>
+                        </select>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1, minWidth: 0 }}>
+                            {searchCards.map((card, i) => (
+                                <SearchCardChip
+                                    key={card.id}
+                                    tokens={card.tokens}
+                                    count={cardCounts[i] ?? 0}
+                                    lang={lang}
+                                    onClick={() => setEditingCardId(card.id)}
+                                    onDelete={
+                                        searchCards.length > 1
+                                            ? () => setSearchCards((prev) => prev.filter((c) => c.id !== card.id))
+                                            : undefined
+                                    }
+                                />
+                            ))}
+                            {searchCards.length < 5 && (
+                                <button
+                                    className="small"
+                                    onClick={() => {
+                                        const id = nextCardIdRef.current++;
+                                        setSearchCards((prev) => [...prev, { id, tokens: [] }]);
+                                        setEditingCardId(id);
+                                    }}
+                                >
+                                    {t(lang, "consume.advanced.add")}
+                                </button>
+                            )}
+                        </div>
+                        <button onClick={() => setAdvancedSearch(false)}>
+                            {t(lang, "consume.advanced.exit")}
+                        </button>
+                    </>
+                )}
             </div>
 
             {error && <div style={{ color: "var(--danger)" }}>{error}</div>}
@@ -812,7 +894,103 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                 />
             )}
 
+            {editingCardId !== null && (() => {
+                const card = searchCards.find((c) => c.id === editingCardId);
+                if (!card) return null;
+                return (
+                    <AdvancedSearchDialog
+                        lang={lang}
+                        initialTokens={card.tokens}
+                        onClose={() => setEditingCardId(null)}
+                        onSave={(tokens) => {
+                            setSearchCards((prev) =>
+                                prev.map((c) => (c.id === editingCardId ? { ...c, tokens } : c)),
+                            );
+                            setEditingCardId(null);
+                        }}
+                    />
+                );
+            })()}
+
             {savedToast && <div className="toast">{savedToast}</div>}
+        </div>
+    );
+}
+
+function SearchCardChip({
+    tokens,
+    count,
+    lang,
+    onClick,
+    onDelete,
+}: {
+    tokens: string[];
+    count: number;
+    lang: Lang;
+    onClick: () => void;
+    onDelete?: () => void;
+}) {
+    const empty = tokens.length === 0;
+    const preview = empty ? t(lang, "consume.advanced.empty") : tokens.join(", ");
+    return (
+        <div
+            onClick={onClick}
+            title={preview}
+            style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "4px 8px 4px 10px",
+                background: "var(--panel-2)",
+                border: "1px solid var(--border)",
+                borderRadius: 14,
+                cursor: "pointer",
+                fontSize: 12,
+                maxWidth: 280,
+            }}
+        >
+            <span
+                style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    maxWidth: 180,
+                    color: empty ? "var(--text-dim)" : undefined,
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                }}
+            >
+                {preview}
+            </span>
+            <span
+                style={{
+                    color: empty ? "var(--text-dim)" : "var(--accent)",
+                    fontWeight: 600,
+                    fontVariantNumeric: "tabular-nums",
+                }}
+            >
+                {t(lang, "consume.advanced.count", { n: count.toLocaleString() })}
+            </span>
+            {onDelete && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete();
+                    }}
+                    title={t(lang, "consume.advanced.delete")}
+                    style={{
+                        padding: "0 6px",
+                        margin: 0,
+                        border: "none",
+                        background: "transparent",
+                        color: "var(--text-dim)",
+                        cursor: "pointer",
+                        fontSize: 14,
+                        lineHeight: 1,
+                    }}
+                >
+                    ×
+                </button>
+            )}
         </div>
     );
 }
