@@ -236,6 +236,17 @@ function buildSectionsKo(): Section[] {
                     <p><b>Value 안의 13자리 숫자</b>는 자동으로 unix ms로 인식되어 점선 밑줄 표시 + hover 시 사람 시간 툴팁 (그리드 + 디테일 패널 둘 다).</p>
                     <p>행 우클릭 → <b>저장하기</b> → 발행 탭에서 꺼내 씁니다.</p>
                     <p>디테일 패널 하단에 Unix ms ↔ 사람 시간 변환기 있음.</p>
+
+                    <p><b>고급 검색</b> — 검색 행 오른쪽 <M>고급 검색</M> 버튼:</p>
+                    <ul>
+                        <li>누르면 같은 줄의 검색 input / 정규식 / 대소문자 체크박스가 사라지고, 그 자리에 <b>토큰 카드</b>가 표시됩니다. 값/키/헤더 listbox는 유지</li>
+                        <li>각 카드 = CSV로 입력한 토큰 묶음. 카드의 모든 토큰이 대상 필드에 <b>case-insensitive substring</b>으로 모두 포함된 메시지 수가 카드에 표시됩니다</li>
+                        <li>예: 값 모드 + 카드 토큰 <M>help, common</M> → <M>{`{"a":"help","b":"common"}`}</M>은 매치, <M>{`{"a":"hello","b":"common"}`}</M>는 help가 없으니 불매치</li>
+                        <li><M>+ 카드 추가</M>로 최대 <b>5개</b>까지 추가 가능. 카드별로 독립 count — "조건 A vs B vs C" 비교 분석용</li>
+                        <li>카드 클릭 → 팝업 다이얼로그에서 CSV 편집 (Ctrl+Enter로 확인). <M>×</M>로 카드 삭제 (마지막 1개는 삭제 불가)</li>
+                        <li>고급 검색 중에는 그리드 필터링은 적용되지 않음 — 카드는 카운트만 표시</li>
+                        <li><M>고급 검색 종료</M>로 일반 검색 모드 복귀, 카드는 메모리에 유지</li>
+                    </ul>
                 </>
             ),
         },
@@ -407,6 +418,17 @@ function buildSectionsEn(): Section[] {
                     </ul>
                     <p>Any <b>13-digit number inside Value</b> is auto-detected as unix ms (dotted underline + hover tooltip), in both grid and detail panel.</p>
                     <p>Right-click a row → <b>Save</b>, then pull it from the Produce tab's Load button.</p>
+
+                    <p><b>Advanced search</b> — the <M>Advanced</M> button on the right side of the search row:</p>
+                    <ul>
+                        <li>Hides the search input and the regex / case-sensitive checkboxes on the same row; keeps the value/key/headers target dropdown. <b>Token cards</b> appear in their place</li>
+                        <li>Each card is a CSV-parsed list of tokens. The card's count is the number of messages whose target field contains <b>every token</b> as a case-insensitive substring</li>
+                        <li>Example: value mode + tokens <M>help, common</M> → matches <M>{`{"a":"help","b":"common"}`}</M>; <M>{`{"a":"hello","b":"common"}`}</M> doesn't match (no "help")</li>
+                        <li><M>+ Add card</M> up to <b>5 cards</b>. Each card counts independently — useful for "A vs B vs C" comparisons</li>
+                        <li>Click a card → dialog with a CSV textarea (Ctrl+Enter submits). <M>×</M> removes a card; the last one can't be deleted</li>
+                        <li>In advanced mode the grid is NOT filtered — cards report counts only</li>
+                        <li><M>Exit advanced</M> returns to the basic search mode; cards stay in memory</li>
+                    </ul>
                 </>
             ),
         },
