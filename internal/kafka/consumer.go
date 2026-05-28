@@ -8,7 +8,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -16,10 +15,12 @@ import (
 type SeekMode string
 
 const (
-	SeekBeginning SeekMode = "beginning"
-	SeekEnd       SeekMode = "end"
-	SeekOffset    SeekMode = "offset"
-	SeekTimestamp SeekMode = "timestamp"
+	SeekBeginning   SeekMode = "beginning"
+	SeekEnd         SeekMode = "end"
+	SeekOffset      SeekMode = "offset" // alias for SeekOffsetAfter, kept for backward compat
+	SeekOffsetAfter SeekMode = "offsetAfter"
+	SeekOffsetBefore SeekMode = "offsetBefore"
+	SeekTimestamp   SeekMode = "timestamp"
 )
 
 // ConsumeOptions controls a single fetch operation.
@@ -132,9 +133,36 @@ func (m *Manager) Consume(ctx context.Context, profileID string, opts ConsumeOpt
 			}
 			startOffsets[pid] = kgo.NewOffset().At(from)
 		}
-	case SeekOffset:
+	case SeekOffset, SeekOffsetAfter:
+		// Inclusive of the given offset: start exactly at opts.Offset and
+		// read forward (opts.Offset, +1, +2, …) up to MaxMessages.
 		for pid := range td.Partitions {
 			startOffsets[pid] = kgo.NewOffset().At(opts.Offset)
+		}
+	case SeekOffsetBefore:
+		// Inclusive of the given offset on the upper side: deliver the last
+		// MaxMessages records whose offset is <= opts.Offset. Partition
+		// budgets are split evenly; per partition we read backwards by
+		// starting at opts.Offset - (perPart - 1) and letting the polling
+		// loop's per-partition cap (stopOffsets) stop at opts.Offset.
+		nPart := int64(len(td.Partitions))
+		if nPart == 0 {
+			nPart = 1
+		}
+		perPart := int64(opts.MaxMessages) / nPart
+		if perPart < 1 {
+			perPart = 1
+		}
+		for pid := range td.Partitions {
+			s := startMap[pid]
+			from := opts.Offset - (perPart - 1)
+			if from < s.At {
+				from = s.At
+			}
+			if from < 0 {
+				from = 0
+			}
+			startOffsets[pid] = kgo.NewOffset().At(from)
 		}
 	case SeekTimestamp:
 		tsCtx, tsCancel := context.WithTimeout(ctx, 10*time.Second)
@@ -178,6 +206,21 @@ func (m *Manager) Consume(ctx context.Context, profileID string, opts ConsumeOpt
 	fetchCtx, fetchCancel := context.WithDeadline(ctx, deadline)
 	defer fetchCancel()
 
+	// Per-partition inclusive upper bound. For SeekOffsetBefore we cap
+	// at opts.Offset; for every other finite mode we cap at endMap-1
+	// (the last existing record). Records past the cap are skipped.
+	stopAt := map[int32]int64{}
+	for pid, e := range endMap {
+		stopAt[pid] = e.At - 1
+	}
+	if opts.Mode == SeekOffsetBefore {
+		for pid := range stopAt {
+			if opts.Offset < stopAt[pid] {
+				stopAt[pid] = opts.Offset
+			}
+		}
+	}
+
 	out := make([]Message, 0, opts.MaxMessages)
 	delivered := map[int32]int64{}
 
@@ -198,6 +241,12 @@ func (m *Manager) Consume(ctx context.Context, profileID string, opts ConsumeOpt
 			if len(out) >= opts.MaxMessages {
 				return
 			}
+			// Drop records past the per-partition cap. In SeekOffsetBefore
+			// the broker may still hand us a record with offset > opts.Offset
+			// before we close, so we must filter here.
+			if maxOff, ok := stopAt[r.Partition]; ok && r.Offset > maxOff {
+				return
+			}
 			out = append(out, recordToMessage(r))
 			if cur, ok := delivered[r.Partition]; !ok || r.Offset > cur {
 				delivered[r.Partition] = r.Offset
@@ -209,18 +258,17 @@ func (m *Manager) Consume(ctx context.Context, profileID string, opts ConsumeOpt
 			continue
 		}
 		// For finite modes, stop once every partition has been drained up
-		// to the end offset we observed at the start of the fetch.
-		drained := allDrained(delivered, endMap, startOffsets)
-		if drained {
+		// to its inclusive cap.
+		if allDrained(delivered, stopAt, startOffsets) {
 			break
 		}
 	}
 	return out, nil
 }
 
-func allDrained(delivered map[int32]int64, endMap map[int32]kadm.Offset, starts map[int32]kgo.Offset) bool {
-	for pid, end := range endMap {
-		if end.At <= 0 {
+func allDrained(delivered map[int32]int64, stopAt map[int32]int64, starts map[int32]kgo.Offset) bool {
+	for pid, maxOff := range stopAt {
+		if maxOff < 0 {
 			continue
 		}
 		// If our seek for this partition was already at/after end, treat as drained.
@@ -228,7 +276,7 @@ func allDrained(delivered map[int32]int64, endMap map[int32]kadm.Offset, starts 
 			continue
 		}
 		cur, ok := delivered[pid]
-		if !ok || cur < end.At-1 {
+		if !ok || cur < maxOff {
 			return false
 		}
 	}

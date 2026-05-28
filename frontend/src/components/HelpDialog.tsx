@@ -187,10 +187,22 @@ function buildSectionsKo(): Section[] {
             title: "5. 조회",
             body: (
                 <>
-                    <p>모드: <b>처음부터 / 끝에서 / 오프셋 / 타임스탬프</b>.</p>
-                    <p>Timestamp 컬럼:</p>
+                    <p>모드: <b>처음부터 / 끝에서 / 오프셋 이후 / 오프셋 이전 / 타임스탬프</b>.</p>
                     <ul>
-                        <li><b>헤더 클릭</b> → 정렬 cycle (없음 → 내림차순 ▼ → 오름차순 ▲ → 없음)</li>
+                        <li><b>오프셋 이후</b> — 입력한 오프셋부터 (포함) 그 이후로 limit개. 입력값이 그리드 첫 행에 노출됨</li>
+                        <li><b>오프셋 이전</b> — 입력한 오프셋까지 (포함) 그 이전으로 limit개. 입력값은 그리드 마지막 행에 위치 (Kafka는 항상 offset 오름차순 반환). Offset 컬럼을 ▼ 정렬하면 입력값이 row 1로 옴</li>
+                        <li>두 모드 모두 입력값을 <b>모든 파티션</b>에 동일 적용. 멀티 파티션이면 limit이 파티션 수로 나뉘어 분배됨</li>
+                    </ul>
+                    <p><b>가져오기 옆 카운트</b> <M>{"{shown} / {total} 건"}</M> — 가져온 총 건수와 (검색 시) 필터 후 표시 건수. limit이 1000이어도 989건만 있으면 989로 표시.</p>
+                    <p>그리드 맨 왼쪽 <M>#</M> 컬럼은 1부터 시작하는 행 인덱스. 스크롤 위치를 파악하거나 정렬·필터된 결과의 순서를 확인하는 용도.</p>
+                    <p><b>헤더 클릭으로 정렬 cycle</b> (없음 → 내림차순 ▼ → 오름차순 ▲ → 없음):</p>
+                    <ul>
+                        <li><b>Offset 컬럼</b> — 같은 파티션 내에서 offset 순. 멀티 파티션이면 파티션 번호 우선</li>
+                        <li><b>Timestamp 컬럼</b> — 타임스탬프 순</li>
+                        <li>두 컬럼은 상호배타. 하나 클릭하면 다른 컬럼 정렬은 해제</li>
+                    </ul>
+                    <p>Timestamp 컬럼 기타:</p>
+                    <ul>
                         <li><b>헤더 우클릭</b> → 현지 시간 ↔ Unix ms 표시 전환</li>
                         <li><b>셀 hover</b> → 밀리초까지 풀 정밀도 시간 툴팁</li>
                     </ul>
@@ -320,10 +332,22 @@ function buildSectionsEn(): Section[] {
             title: "5. Consume",
             body: (
                 <>
-                    <p>Modes: <b>Beginning / End / Offset / Timestamp</b>.</p>
-                    <p>Timestamp column:</p>
+                    <p>Modes: <b>Beginning / End / Offset (after) / Offset (before) / Timestamp</b>.</p>
                     <ul>
-                        <li><b>Click header</b> → sort cycle (none → desc ▼ → asc ▲ → none)</li>
+                        <li><b>Offset (after)</b> — from the given offset inclusive, forward, up to limit. The input value shows up as row 1</li>
+                        <li><b>Offset (before)</b> — up to the given offset inclusive, backward, up to limit. Since Kafka always returns records in ascending offset order, the input value ends up as the last row. Click the Offset header ▼ to bring it to row 1</li>
+                        <li>Both modes apply the same offset to <b>every partition</b>. For multi-partition topics the limit is split evenly across partitions</li>
+                    </ul>
+                    <p><b>Count pill next to Fetch</b> <M>{"{shown} / {total}"}</M> — total records fetched and (when search is active) how many remain after filtering. If limit is 1000 but only 989 exist, the pill shows 989.</p>
+                    <p>The leftmost <M>#</M> column is a 1-based row index — useful for tracking scroll position or the order after sorting/filtering.</p>
+                    <p><b>Click a sortable header to cycle sort</b> (none → desc ▼ → asc ▲ → none):</p>
+                    <ul>
+                        <li><b>Offset column</b> — by offset within a partition. Multi-partition: partition first, then offset</li>
+                        <li><b>Timestamp column</b> — by timestamp</li>
+                        <li>The two columns are mutually exclusive; clicking one clears the other's sort</li>
+                    </ul>
+                    <p>Timestamp column extras:</p>
+                    <ul>
                         <li><b>Right-click header</b> → toggle local time / Unix ms</li>
                         <li><b>Hover a cell</b> → full-precision time tooltip</li>
                     </ul>

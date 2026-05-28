@@ -16,6 +16,7 @@ import { TimestampConverter } from "../components/TimestampConverter";
 import { formatLocalHuman, withMsTooltips } from "../lib/formatTime";
 
 const COLUMNS: ColumnDef[] = [
+    { key: "idx",       label: "#",         defaultWidth: 56,  minWidth: 40 },
     { key: "p",         label: "P",         defaultWidth: 60,  minWidth: 40 },
     { key: "offset",    label: "Offset",    defaultWidth: 110, minWidth: 70 },
     { key: "timestamp", label: "Timestamp", defaultWidth: 170, minWidth: 110 },
@@ -31,7 +32,7 @@ interface Props {
     onTopicChange: (topic: string) => void;
 }
 
-type Mode = "beginning" | "end" | "offset" | "timestamp";
+type Mode = "beginning" | "end" | "offsetAfter" | "offsetBefore" | "timestamp";
 type Target = "value" | "key" | "headers";
 type TsFormat = "local" | "unix";
 
@@ -62,12 +63,20 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     const [rowCtxMenu, setRowCtxMenu] = useState<{ x: number; y: number; message: kafka.Message } | null>(null);
     const [saveDialog, setSaveDialog] = useState<kafka.Message | null>(null);
     const [savedToast, setSavedToast] = useState<string | null>(null);
-    // null = original fetch order; cycle: null → "desc" → "asc" → null on header click
-    const [tsSort, setTsSort] = useState<"asc" | "desc" | null>(null);
+    // null = original fetch order. Only one column sorted at a time.
+    // Cycle on header click: null → desc → asc → null.
+    type SortKey = "timestamp" | "offset";
+    const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" } | null>(null);
 
-    const cycleTsSort = () => {
-        setTsSort((s) => (s === null ? "desc" : s === "desc" ? "asc" : null));
+    const cycleSort = (key: SortKey) => {
+        setSort((s) => {
+            if (!s || s.key !== key) return { key, dir: "desc" };
+            if (s.dir === "desc") return { key, dir: "asc" };
+            return null;
+        });
     };
+    const sortArrow = (key: SortKey) =>
+        sort?.key === key ? (sort.dir === "desc" ? " ▼" : " ▲") : "";
 
     useEffect(() => { localStorage.setItem(TS_FORMAT_KEY, tsFormat); }, [tsFormat]);
 
@@ -104,13 +113,18 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     }, [profileId]);
 
     const sortedMessages = useMemo(() => {
-        if (!tsSort) return messages;
+        if (!sort) return messages;
         const arr = [...messages];
-        arr.sort((a, b) =>
-            tsSort === "asc" ? a.timestampMs - b.timestampMs : b.timestampMs - a.timestampMs,
-        );
+        const cmp = (a: kafka.Message, b: kafka.Message) => {
+            if (sort.key === "offset") {
+                if (a.partition !== b.partition) return a.partition - b.partition;
+                return Number(a.offset - b.offset);
+            }
+            return a.timestampMs - b.timestampMs;
+        };
+        arr.sort((a, b) => (sort.dir === "asc" ? cmp(a, b) : -cmp(a, b)));
         return arr;
-    }, [messages, tsSort]);
+    }, [messages, sort]);
 
     const filtered = useMemo(() => {
         const q = search.trim();
@@ -163,7 +177,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
             const opts = kafka.ConsumeOptions.createFrom({
                 topic,
                 mode,
-                offset: mode === "offset" ? Number(offset) || 0 : 0,
+                offset: mode === "offsetAfter" || mode === "offsetBefore" ? Number(offset) || 0 : 0,
                 timestampMs: ts,
                 maxMessages,
                 timeoutMs,
@@ -213,10 +227,11 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                 <select value={mode} onChange={(e) => setMode(e.target.value as Mode)} style={{ width: 140 }}>
                     <option value="beginning">{t(lang, "consume.mode.beginning")}</option>
                     <option value="end">{t(lang, "consume.mode.end")}</option>
-                    <option value="offset">{t(lang, "consume.mode.offset")}</option>
+                    <option value="offsetAfter">{t(lang, "consume.mode.offsetAfter")}</option>
+                    <option value="offsetBefore">{t(lang, "consume.mode.offsetBefore")}</option>
                     <option value="timestamp">{t(lang, "consume.mode.timestamp")}</option>
                 </select>
-                {mode === "offset" && (
+                {(mode === "offsetAfter" || mode === "offsetBefore") && (
                     <input
                         style={{ width: 120 }}
                         placeholder={t(lang, "consume.offset")}
@@ -249,10 +264,10 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                 <button className="primary" onClick={handleFetch} disabled={loading || !topic}>
                     {loading ? t(lang, "consume.fetching") : t(lang, "consume.fetch")}
                 </button>
-                <div className="grow" />
                 <span className="count-pill">
                     {t(lang, "consume.shownOf", { shown: filtered.length, total: messages.length })}
                 </span>
+                <div className="grow" />
                 <button onClick={handleExport} disabled={filtered.length === 0}>
                     {t(lang, "consume.export")}
                 </button>
@@ -295,21 +310,22 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                         </colgroup>
                         <thead>
                             <tr>
-                                {COLUMNS.map((c) => (
-                                    <ResizableTh
-                                        key={c.key}
-                                        column={c}
-                                        width={widths[c.key]}
-                                        onResize={(w) => setWidth(c.key, w)}
-                                        onReset={() => resetWidth(c.key)}
-                                        onContextMenu={c.key === "timestamp" ? openTsCtxMenu : undefined}
-                                        onClick={c.key === "timestamp" ? cycleTsSort : undefined}
-                                    >
-                                        {c.key === "timestamp"
-                                            ? `${c.label}${tsSort === "desc" ? " ▼" : tsSort === "asc" ? " ▲" : ""}`
-                                            : c.label}
-                                    </ResizableTh>
-                                ))}
+                                {COLUMNS.map((c) => {
+                                    const sortable = c.key === "timestamp" || c.key === "offset";
+                                    return (
+                                        <ResizableTh
+                                            key={c.key}
+                                            column={c}
+                                            width={widths[c.key]}
+                                            onResize={(w) => setWidth(c.key, w)}
+                                            onReset={() => resetWidth(c.key)}
+                                            onContextMenu={c.key === "timestamp" ? openTsCtxMenu : undefined}
+                                            onClick={sortable ? () => cycleSort(c.key as SortKey) : undefined}
+                                        >
+                                            {sortable ? `${c.label}${sortArrow(c.key as SortKey)}` : c.label}
+                                        </ResizableTh>
+                                    );
+                                })}
                             </tr>
                         </thead>
                         <tbody>
@@ -342,6 +358,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                                 }}
                                                 style={{ height: ROW_HEIGHT }}
                                             >
+                                                <td className="mono muted" style={cellStyle}>{viewport.start + i + 1}</td>
                                                 <td style={cellStyle}>{m.partition}</td>
                                                 <td className="mono" style={cellStyle}>{m.offset}</td>
                                                 <td className="mono" style={cellStyle} onContextMenu={openTsCtxMenu} title={formatLocalHuman(m.timestampMs)}>{formatTs(m.timestampMs)}</td>
