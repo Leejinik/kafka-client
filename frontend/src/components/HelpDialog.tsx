@@ -150,6 +150,7 @@ function buildSectionsKo(): Section[] {
                         <li>펼친 파티션 영역 → 파티션 재할당</li>
                         <li>펼친 그룹 카드 → Offset 변경 / 그룹 삭제</li>
                     </ul>
+                    <p><b>그룹 카드의 Committed / End Offset / Lag 셀에 hover</b>하면 10초 간격으로 측정한 <b>초당 변화량</b>이 툴팁으로 표시됩니다. End Offset은 발행 속도(<M>publish/sec</M>), Committed는 소비 속도, Lag는 lag 증감 추이 파악용. 펼친 직후 첫 샘플은 기준값이라 두 번째 SLOW tick부터 값이 나옵니다.</p>
                 </>
             ),
         },
@@ -243,6 +244,24 @@ function buildSectionsKo(): Section[] {
                 </>
             ),
         },
+        {
+            id: "settings",
+            title: "8. 설정 (언어 / 테마)",
+            body: (
+                <>
+                    <p>좌측 사이드바 하단 <M>설정</M>에서 언어와 테마를 변경할 수 있습니다.</p>
+                    <p><b>테마</b> — 5가지 옵션, 선택값은 <M>localStorage</M>에 저장됩니다:</p>
+                    <ul>
+                        <li><b>시스템 따라가기</b> — OS의 다크/라이트 설정에 자동으로 맞춤 (<M>prefers-color-scheme</M> 변경도 실시간 반영)</li>
+                        <li><b>Light</b> — 기본 밝은 테마</li>
+                        <li><b>Dark</b> — 슬레이트 계열의 다크 테마</li>
+                        <li><b>Onion</b> — 크림 배경 + ONION 브랜드 오렌지 (#FF9425) 액센트. 사이드바에 컬러 워드마크 표시</li>
+                        <li><b>Dark Onion</b> — 거의 검정 (#0a0a0a) 표면 + 오렌지 액센트. 화이트 워드마크 사용</li>
+                    </ul>
+                    <p><b>언어</b> — 한국어 / English. 변경 즉시 모든 라벨·도움말이 전환됩니다.</p>
+                </>
+            ),
+        },
     ];
 }
 
@@ -271,6 +290,7 @@ function buildSectionsEn(): Section[] {
                         <li>Partition area in expanded view → reassign</li>
                         <li>Group card in expanded view → reset offsets / delete group</li>
                     </ul>
+                    <p><b>Hover the Committed / End Offset / Lag cells</b> on a group card to see the <b>per-second delta</b> measured over the 10s SLOW tick interval. End Offset shows publish rate (<M>publish/sec</M>), Committed shows consume rate, Lag shows whether lag is growing or shrinking. The first sample after expand is the baseline — values appear from the second SLOW tick onward.</p>
                 </>
             ),
         },
@@ -353,6 +373,24 @@ function buildSectionsEn(): Section[] {
                         <li><b>Reassignment</b> — heavy data movement</li>
                         <li><b>Loop produce (max throughput)</b> — no safety limit; can flood a prod topic</li>
                     </ul>
+                </>
+            ),
+        },
+        {
+            id: "settings",
+            title: "8. Settings (language / theme)",
+            body: (
+                <>
+                    <p>Open <M>Settings</M> at the bottom of the sidebar to change language and theme.</p>
+                    <p><b>Theme</b> — 5 options, persisted in <M>localStorage</M>:</p>
+                    <ul>
+                        <li><b>Follow system</b> — tracks the OS light/dark setting and reacts to <M>prefers-color-scheme</M> changes live</li>
+                        <li><b>Light</b> — the default bright palette</li>
+                        <li><b>Dark</b> — slate-based dark surfaces</li>
+                        <li><b>Onion</b> — cream background + ONION brand orange (#FF9425) accent. Color wordmark shown in the sidebar</li>
+                        <li><b>Dark Onion</b> — near-black surface (#0a0a0a) + orange accent. White wordmark</li>
+                    </ul>
+                    <p><b>Language</b> — Korean / English. Switches all labels and help text immediately.</p>
                 </>
             ),
         },

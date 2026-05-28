@@ -49,6 +49,65 @@ type PartitionsState =
     | { kind: "ok"; data: kafka.PartitionDetail[] }
     | { kind: "err"; message: string };
 
+// Per-partition rate of change between consecutive SLOW ticks (10s apart).
+// null means no prior sample yet (first observation after expand/refresh).
+type GroupRate = {
+    endRate: number | null;
+    committedRate: number | null;
+    lagRate: number | null;
+};
+type GroupSnapshot = Record<string, Record<number, { end: number; committed: number; lag: number }>>;
+type GroupRatesByTopic = Record<string, Record<string, Record<number, GroupRate>>>;
+
+function snapshotFromGroups(data: kafka.GroupView[]): GroupSnapshot {
+    const out: GroupSnapshot = {};
+    for (const g of data) {
+        const m: Record<number, { end: number; committed: number; lag: number }> = {};
+        for (const p of g.partitions) {
+            m[p.partition] = { end: p.endOffset, committed: p.committedOffset, lag: p.lag };
+        }
+        out[g.groupId] = m;
+    }
+    return out;
+}
+
+function ratesFromDelta(
+    prev: GroupSnapshot | undefined,
+    curr: GroupSnapshot,
+    intervalSec: number,
+): Record<string, Record<number, GroupRate>> {
+    const out: Record<string, Record<number, GroupRate>> = {};
+    const valid = (v: number) => v >= 0;
+    for (const gid of Object.keys(curr)) {
+        const inner: Record<number, GroupRate> = {};
+        for (const partStr of Object.keys(curr[gid])) {
+            const part = +partStr;
+            const c = curr[gid][part];
+            const p = prev?.[gid]?.[part];
+            if (!p) {
+                inner[part] = { endRate: null, committedRate: null, lagRate: null };
+                continue;
+            }
+            inner[part] = {
+                endRate: valid(c.end) && valid(p.end) ? (c.end - p.end) / intervalSec : null,
+                committedRate: valid(c.committed) && valid(p.committed) ? (c.committed - p.committed) / intervalSec : null,
+                lagRate: valid(c.lag) && valid(p.lag) ? (c.lag - p.lag) / intervalSec : null,
+            };
+        }
+        out[gid] = inner;
+    }
+    return out;
+}
+
+function formatPerSec(r: number | null | undefined, suffix = "/sec"): string | undefined {
+    if (r === null || r === undefined || Number.isNaN(r)) return undefined;
+    if (r === 0) return `0${suffix}`;
+    const sign = r > 0 ? "+" : "-";
+    const abs = Math.abs(r);
+    const num = abs >= 10 ? Math.round(abs).toString() : (Math.round(abs * 10) / 10).toString();
+    return `${sign}${num}${suffix}`;
+}
+
 type Dialog =
     | { kind: "none" }
     | { kind: "create" }
@@ -77,6 +136,10 @@ export function TopicsPage({ lang, profileId, onTick }: Props) {
     const [rates, setRates] = useState<Record<string, number>>({});
     // Per-topic count of partitions currently being reassigned; refreshed on tick.
     const [reassignCounts, setReassignCounts] = useState<Record<string, number>>({});
+    // Per-group/partition delta-per-second between SLOW ticks. Shown in hover
+    // tooltips on the Committed / End Offset / Lag cells.
+    const [groupRates, setGroupRates] = useState<GroupRatesByTopic>({});
+    const prevGroupsRef = useRef<Record<string, GroupSnapshot>>({});
 
     const refresh = async () => {
         setLoading(true);
@@ -86,6 +149,8 @@ export function TopicsPage({ lang, profileId, onTick }: Props) {
             setGroupCache({});
             setPartCache({});
             setExpanded(new Set());
+            prevGroupsRef.current = {};
+            setGroupRates({});
         } catch (e) {
             setError(errString(e));
         } finally {
@@ -98,9 +163,22 @@ export function TopicsPage({ lang, profileId, onTick }: Props) {
     // Loud variants show "loading" state — used on first expansion / explicit retry.
     const loadGroups = useCallback(async (topic: string) => {
         setGroupCache((c) => ({ ...c, [topic]: { kind: "loading" } }));
+        // Drop any prior snapshot so the first sample after reload is treated
+        // as a baseline (no rate shown until the next SLOW tick produces a delta).
+        delete prevGroupsRef.current[topic];
+        setGroupRates((c) => {
+            if (!(topic in c)) return c;
+            const next = { ...c };
+            delete next[topic];
+            return next;
+        });
         try {
             const data = await ListGroupsForTopic(profileId, topic);
             setGroupCache((c) => ({ ...c, [topic]: { kind: "ok", data } }));
+            const curr = snapshotFromGroups(data);
+            const rates = ratesFromDelta(prevGroupsRef.current[topic], curr, SLOW_REFRESH_MS / 1000);
+            prevGroupsRef.current[topic] = curr;
+            setGroupRates((c) => ({ ...c, [topic]: rates }));
         } catch (e) {
             setGroupCache((c) => ({ ...c, [topic]: { kind: "err", message: errString(e) } }));
         }
@@ -188,6 +266,10 @@ export function TopicsPage({ lang, profileId, onTick }: Props) {
                         const data = await ListGroupsForTopic(profileId, topic);
                         if (cancelled) return;
                         setGroupCache((c) => ({ ...c, [topic]: { kind: "ok", data } }));
+                        const curr = snapshotFromGroups(data);
+                        const rates = ratesFromDelta(prevGroupsRef.current[topic], curr, SLOW_REFRESH_MS / 1000);
+                        prevGroupsRef.current[topic] = curr;
+                        setGroupRates((c) => ({ ...c, [topic]: rates }));
                     } catch { /* keep last */ }
                 }
             } finally {
@@ -321,6 +403,7 @@ export function TopicsPage({ lang, profileId, onTick }: Props) {
                                     groupsState={groupCache[it.name]}
                                     partitionsState={partCache[it.name]}
                                     rate={rates[it.name]}
+                                    groupRates={groupRates[it.name]}
                                     reassignCount={reassignCounts[it.name] ?? 0}
                                     onToggle={() => toggleExpand(it.name)}
                                     onReloadGroups={() => loadGroups(it.name)}
@@ -409,6 +492,7 @@ function RowGroup({
     groupsState,
     partitionsState,
     rate,
+    groupRates,
     reassignCount,
     onToggle,
     onReloadGroups,
@@ -423,6 +507,7 @@ function RowGroup({
     groupsState: GroupsState | undefined;
     partitionsState: PartitionsState | undefined;
     rate: number | undefined;
+    groupRates: Record<string, Record<number, GroupRate>> | undefined;
     reassignCount: number;
     onToggle: () => void;
     onReloadGroups: () => void;
@@ -473,6 +558,7 @@ function RowGroup({
                             lang={lang}
                             groupsState={groupsState}
                             partitionsState={partitionsState}
+                            groupRates={groupRates}
                             onReloadGroups={onReloadGroups}
                             onReloadPartitions={onReloadPartitions}
                             onPartitionsContextMenu={onPartitionsContextMenu}
@@ -497,6 +583,7 @@ function ExpandedTopic({
     lang,
     groupsState,
     partitionsState,
+    groupRates,
     onReloadGroups,
     onReloadPartitions,
     onPartitionsContextMenu,
@@ -505,6 +592,7 @@ function ExpandedTopic({
     lang: Lang;
     groupsState: GroupsState | undefined;
     partitionsState: PartitionsState | undefined;
+    groupRates: Record<string, Record<number, GroupRate>> | undefined;
     onReloadGroups: () => void;
     onReloadPartitions: () => void;
     onPartitionsContextMenu: (e: React.MouseEvent) => void;
@@ -521,6 +609,7 @@ function ExpandedTopic({
             <GroupsCard
                 lang={lang}
                 state={groupsState}
+                groupRates={groupRates}
                 onReload={onReloadGroups}
                 onGroupContextMenu={onGroupContextMenu}
             />
@@ -608,11 +697,13 @@ function PartitionsCard({
 function GroupsCard({
     lang,
     state,
+    groupRates,
     onReload,
     onGroupContextMenu,
 }: {
     lang: Lang;
     state: GroupsState | undefined;
+    groupRates: Record<string, Record<number, GroupRate>> | undefined;
     onReload: () => void;
     onGroupContextMenu: (e: React.MouseEvent, group: kafka.GroupView) => void;
 }) {
@@ -639,6 +730,7 @@ function GroupsCard({
                             key={g.groupId}
                             lang={lang}
                             group={g}
+                            rates={groupRates?.[g.groupId]}
                             onContextMenu={(e) => onGroupContextMenu(e, g)}
                         />
                     ))}
@@ -651,10 +743,12 @@ function GroupsCard({
 function GroupCard({
     lang,
     group,
+    rates,
     onContextMenu,
 }: {
     lang: Lang;
     group: kafka.GroupView;
+    rates: Record<number, GroupRate> | undefined;
     onContextMenu: (e: React.MouseEvent) => void;
 }) {
     const stateColor =
@@ -717,12 +811,13 @@ function GroupCard({
                     <tbody>
                         {group.partitions.map((p) => {
                             const lagColor = p.lag < 0 ? "var(--danger)" : p.lag > 1000 ? "var(--warn)" : undefined;
+                            const r = rates?.[p.partition];
                             return (
                                 <tr key={p.partition}>
                                     <td>{p.partition}</td>
-                                    <td className="mono">{p.committedOffset < 0 ? "—" : p.committedOffset.toLocaleString()}</td>
-                                    <td className="mono">{p.endOffset < 0 ? "—" : p.endOffset.toLocaleString()}</td>
-                                    <td className="mono" style={{ color: lagColor, fontWeight: lagColor ? 600 : undefined }}>
+                                    <td className="mono" title={formatPerSec(r?.committedRate)}>{p.committedOffset < 0 ? "—" : p.committedOffset.toLocaleString()}</td>
+                                    <td className="mono" title={formatPerSec(r?.endRate, " publish/sec")}>{p.endOffset < 0 ? "—" : p.endOffset.toLocaleString()}</td>
+                                    <td className="mono" style={{ color: lagColor, fontWeight: lagColor ? 600 : undefined }} title={formatPerSec(r?.lagRate)}>
                                         {p.lag < 0 ? p.err || "—" : p.lag.toLocaleString()}
                                     </td>
                                     <td className="mono">{p.clientId || p.memberId || "—"}</td>
