@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Lang, t } from "../lib/i18n";
 import { errString } from "../lib/errors";
-import { Consume, ListTopics } from "../../wailsjs/go/main/App";
+import { CancelConsume, Consume, ConsumeRange, ListTopics, StartTailConsume } from "../../wailsjs/go/main/App";
+import { EventsOff, EventsOn } from "../../wailsjs/runtime";
 import { kafka } from "../../wailsjs/go/models";
 import {
     ColumnDef,
@@ -32,7 +33,12 @@ interface Props {
     onTopicChange: (topic: string) => void;
 }
 
-type Mode = "beginning" | "end" | "offsetAfter" | "offsetBefore" | "timestamp";
+type Mode = "beginning" | "end" | "offsetAfter" | "offsetBefore" | "timestamp" | "tail";
+
+// Defaults the form returns to after a tail session stops.
+const DEFAULT_MODE: Mode = "end";
+const DEFAULT_MAX = 1000;
+const DEFAULT_TIMEOUT = 8000;
 type Target = "value" | "key" | "headers";
 type TsFormat = "local" | "unix";
 
@@ -41,14 +47,36 @@ const TS_FORMAT_KEY = "consume.tsFormat";
 
 export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChange }: Props) {
     const [topics, setTopics] = useState<string[]>([]);
-    const [mode, setMode] = useState<Mode>("end");
+    const [mode, setMode] = useState<Mode>(DEFAULT_MODE);
     const [offset, setOffset] = useState<string>("0");
-    const [timestamp, setTimestamp] = useState<string>("");
-    const [maxMessages, setMaxMessages] = useState<number>(1000);
-    const [timeoutMs, setTimeoutMs] = useState<number>(8000);
+    const [timestampStart, setTimestampStart] = useState<string>("");
+    const [timestampEnd, setTimestampEnd] = useState<string>("");
+    const [maxMessages, setMaxMessages] = useState<number>(DEFAULT_MAX);
+    const [timeoutMs, setTimeoutMs] = useState<number>(DEFAULT_TIMEOUT);
+
+    // Pagination state for timestamp-range mode. pageCursors[i] is the
+    // cursor needed to (re)fetch page i; pageCursors[0] is always [] (the
+    // request resolves from StartMs). pageSizes[i] is the result count of
+    // page i — used only on backward navigation to know how far to step
+    // currentPageStart. currentPageStart is the 0-based index of the first
+    // record on the current page, used by the # column. totalCount /
+    // totalPages come from the first page response.
+    const [pageCursors, setPageCursors] = useState<kafka.CursorEntry[][]>([]);
+    const [pageSizes, setPageSizes] = useState<number[]>([]);
+    const [pageIdx, setPageIdx] = useState(0);
+    const [nextCursor, setNextCursor] = useState<kafka.CursorEntry[] | null>(null);
+    const [currentPageStart, setCurrentPageStart] = useState(0);
+    const [totalCount, setTotalCount] = useState<number | null>(null);
+    const totalPages = totalCount !== null && maxMessages > 0
+        ? Math.max(1, Math.ceil(totalCount / maxMessages))
+        : null;
 
     const [messages, setMessages] = useState<kafka.Message[]>([]);
     const [loading, setLoading] = useState(false);
+    const [tailing, setTailing] = useState(false);
+    // While true (and tailing), new messages pin the view to the bottom.
+    // Mouse-wheeling pauses follow; Shift+G resumes it.
+    const [follow, setFollow] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const [search, setSearch] = useState("");
@@ -94,6 +122,106 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     const { widths, setWidth, resetWidth } = useColumnWidths("kfc.consume.colWidths", COLUMNS);
     const fixedColsWidth = COLUMNS.filter((c) => !c.grow).reduce((sum, c) => sum + widths[c.key], 0);
     const preview = useResizableWidth("kfc.consume.previewWidth", 380);
+
+    // Tail -f event subscription. One subscription per profile lifetime.
+    useEffect(() => {
+        if (!profileId) return;
+        const batchEvent = `consume.tail.batch:${profileId}`;
+        const stopEvent = `consume.tail.stopped:${profileId}`;
+        EventsOn(batchEvent, (batch: kafka.Message[]) => {
+            if (!batch || batch.length === 0) return;
+            setMessages((prev) => prev.concat(batch));
+        });
+        EventsOn(stopEvent, (errMsg: string) => {
+            setTailing(false);
+            if (errMsg) setError(errMsg);
+            // Form returns to the initial defaults — but the messages stay.
+            setMode(DEFAULT_MODE);
+            setMaxMessages(DEFAULT_MAX);
+            setTimeoutMs(DEFAULT_TIMEOUT);
+        });
+        return () => {
+            EventsOff(batchEvent);
+            EventsOff(stopEvent);
+        };
+    }, [profileId]);
+
+    // Auto-start tail the moment the user picks the tail mode.
+    useEffect(() => {
+        if (mode !== "tail" || !topic || !profileId) return;
+        let cancelled = false;
+        setMessages([]);
+        setSelected(null);
+        setError(null);
+        setTailing(true);
+        setFollow(true);
+        StartTailConsume(profileId, topic).catch((e) => {
+            if (cancelled) return;
+            setTailing(false);
+            setError(errString(e));
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [mode, topic, profileId]);
+
+    // Pin to bottom whenever the message list grows while following.
+    useEffect(() => {
+        if (!tailing || !follow) return;
+        const el = scrollRef.current;
+        if (!el) return;
+        el.scrollTop = el.scrollHeight;
+    }, [messages, tailing, follow]);
+
+    // Any wheel interaction pauses follow. (deltaY != 0 covers both
+    // directions; scrolling down at the bottom is a no-op visually but
+    // we still pause so behaviour is predictable.)
+    useEffect(() => {
+        if (!tailing) return;
+        const el = scrollRef.current;
+        if (!el) return;
+        const onWheel = (e: WheelEvent) => {
+            if (e.deltaY !== 0) setFollow(false);
+        };
+        el.addEventListener("wheel", onWheel, { passive: true });
+        return () => el.removeEventListener("wheel", onWheel);
+    }, [tailing]);
+
+    // Shift+G snaps to bottom and resumes follow. Ignored while typing in
+    // a field so the search/offset inputs accept literal "G".
+    useEffect(() => {
+        if (!tailing) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (!e.shiftKey) return;
+            if (e.key !== "G" && e.key !== "g" && e.code !== "KeyG") return;
+            const tag = (document.activeElement?.tagName || "").toLowerCase();
+            if (tag === "input" || tag === "textarea" || tag === "select") return;
+            e.preventDefault();
+            setFollow(true);
+            const el = scrollRef.current;
+            if (el) el.scrollTop = el.scrollHeight;
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [tailing]);
+
+    // Easter egg: Ctrl+C stops tail like SIGINT in a real shell. Skip when
+    // text is selected or an input has focus so normal copy still works.
+    useEffect(() => {
+        if (!tailing) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (!e.ctrlKey) return;
+            if (e.key !== "c" && e.key !== "C" && e.code !== "KeyC") return;
+            const tag = (document.activeElement?.tagName || "").toLowerCase();
+            if (tag === "input" || tag === "textarea") return;
+            const sel = window.getSelection();
+            if (sel && sel.toString().length > 0) return;
+            e.preventDefault();
+            void CancelConsume(profileId);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [tailing, profileId]);
 
     useEffect(() => {
         (async () => {
@@ -160,32 +288,191 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         setViewport({ start, end });
     };
 
+    // Parse an ISO string or numeric ms into a unix-ms number, or 0 if blank/invalid.
+    const parseTs = (raw: string): number => {
+        const s = raw.trim();
+        if (!s) return 0;
+        const n = Number(s);
+        if (!Number.isNaN(n) && n > 0) return Math.floor(n);
+        const parsed = Date.parse(s);
+        return Number.isNaN(parsed) ? 0 : parsed;
+    };
+
+    const fetchRangePage = async (cursor: kafka.CursorEntry[], fromEnd = false) => {
+        const start = parseTs(timestampStart);
+        if (start <= 0) throw new Error(t(lang, "consume.timestamp.start"));
+        const end = parseTs(timestampEnd); // 0 means "no end cap"
+        const opts = kafka.ConsumeRangeOptions.createFrom({
+            topic,
+            startMs: start,
+            endMs: end,
+            maxMessages,
+            timeoutMs,
+            cursor: fromEnd ? [] : cursor,
+            fromEnd,
+        });
+        return await ConsumeRange(profileId, opts);
+    };
+
     const handleFetch = async () => {
-        if (!topic) return;
+        if (!topic || mode === "tail") return;
         setLoading(true);
         setError(null);
         try {
-            let ts = 0;
-            if (mode === "timestamp" && timestamp.trim()) {
-                const n = Number(timestamp);
-                if (!Number.isNaN(n) && n > 0) ts = Math.floor(n);
-                else {
-                    const parsed = Date.parse(timestamp);
-                    if (!Number.isNaN(parsed)) ts = parsed;
-                }
+            if (mode === "timestamp") {
+                const page = await fetchRangePage([]);
+                const size = page.messages?.length || 0;
+                setMessages(page.messages || []);
+                setSelected(size > 0 ? page.messages[0] : null);
+                setPageCursors([[]]);
+                setPageSizes([size]);
+                setPageIdx(0);
+                setCurrentPageStart(0);
+                setTotalCount(page.totalCount >= 0 ? page.totalCount : null);
+                setNextCursor(page.done ? null : page.cursor);
+                setViewport({ start: 0, end: Math.min(size, 60) });
+                if (scrollRef.current) scrollRef.current.scrollTop = 0;
+                return;
             }
             const opts = kafka.ConsumeOptions.createFrom({
                 topic,
                 mode,
                 offset: mode === "offsetAfter" || mode === "offsetBefore" ? Number(offset) || 0 : 0,
-                timestampMs: ts,
+                timestampMs: 0,
                 maxMessages,
                 timeoutMs,
             });
             const out = await Consume(profileId, opts);
             setMessages(out);
             setSelected(out.length > 0 ? out[0] : null);
+            setPageCursors([]);
+            setPageSizes([]);
+            setPageIdx(0);
+            setCurrentPageStart(0);
+            setTotalCount(null);
+            setNextCursor(null);
             setViewport({ start: 0, end: Math.min(out.length, 60) });
+            if (scrollRef.current) scrollRef.current.scrollTop = 0;
+        } catch (e) {
+            setError(errString(e));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleNextPage = async () => {
+        if (!nextCursor || loading) return;
+        const currentSize = pageSizes[pageIdx] ?? messages.length;
+        setLoading(true);
+        setError(null);
+        try {
+            const page = await fetchRangePage(nextCursor);
+            const size = page.messages?.length || 0;
+            setMessages(page.messages || []);
+            setSelected(size > 0 ? page.messages[0] : null);
+            setPageCursors((prev) => {
+                const next = prev.slice(0, pageIdx + 1);
+                next.push(nextCursor);
+                return next;
+            });
+            setPageSizes((prev) => {
+                const next = prev.slice(0, pageIdx + 1);
+                next.push(size);
+                return next;
+            });
+            setPageIdx((i) => i + 1);
+            setCurrentPageStart((s) => s + currentSize);
+            setNextCursor(page.done ? null : page.cursor);
+            setViewport({ start: 0, end: Math.min(size, 60) });
+            if (scrollRef.current) scrollRef.current.scrollTop = 0;
+        } catch (e) {
+            setError(errString(e));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePrevPage = async () => {
+        if (pageIdx === 0 || loading) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const prevIdx = pageIdx - 1;
+            const cursor = pageCursors[prevIdx] || [];
+            const prevSize = pageSizes[prevIdx] ?? 0;
+            const page = await fetchRangePage(cursor);
+            const size = page.messages?.length || 0;
+            setMessages(page.messages || []);
+            setSelected(size > 0 ? page.messages[0] : null);
+            setPageSizes((prev) => {
+                const next = prev.slice();
+                next[prevIdx] = size;
+                return next;
+            });
+            setPageIdx(prevIdx);
+            setCurrentPageStart((s) => Math.max(0, s - (prevSize || size)));
+            setNextCursor(page.done ? null : page.cursor);
+            setViewport({ start: 0, end: Math.min(size, 60) });
+            if (scrollRef.current) scrollRef.current.scrollTop = 0;
+        } catch (e) {
+            setError(errString(e));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleFirstPage = async () => {
+        if (pageIdx === 0 || loading) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const page = await fetchRangePage([]);
+            const size = page.messages?.length || 0;
+            setMessages(page.messages || []);
+            setSelected(size > 0 ? page.messages[0] : null);
+            setPageCursors([[]]);
+            setPageSizes([size]);
+            setPageIdx(0);
+            setCurrentPageStart(0);
+            if (page.totalCount >= 0) setTotalCount(page.totalCount);
+            setNextCursor(page.done ? null : page.cursor);
+            setViewport({ start: 0, end: Math.min(size, 60) });
+            if (scrollRef.current) scrollRef.current.scrollTop = 0;
+        } catch (e) {
+            setError(errString(e));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleLastPage = async () => {
+        if (loading) return;
+        if (totalPages !== null && pageIdx === totalPages - 1) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const page = await fetchRangePage([], true);
+            const size = page.messages?.length || 0;
+            const total = page.totalCount >= 0 ? page.totalCount : totalCount ?? size;
+            const lastIdx = maxMessages > 0 ? Math.max(0, Math.ceil(total / maxMessages) - 1) : 0;
+            setMessages(page.messages || []);
+            setSelected(size > 0 ? page.messages[0] : null);
+            // We don't have cursors for the intermediate pages, so the
+            // history sequence after a last-page jump is no longer walkable.
+            // pageCursors keeps just the marker for page 0 (initial); pageSizes
+            // gets a sparse entry at lastIdx so backward navigation falls
+            // back to firstPage via the « 처음 button.
+            setPageCursors([[]]);
+            const sparseSizes: number[] = new Array(lastIdx + 1).fill(0);
+            sparseSizes[0] = pageSizes[0] || 0;
+            sparseSizes[lastIdx] = size;
+            setPageSizes(sparseSizes);
+            setPageIdx(lastIdx);
+            setCurrentPageStart(Math.max(0, total - size));
+            if (page.totalCount >= 0) setTotalCount(page.totalCount);
+            // Done is implied — this is the last page.
+            setNextCursor(null);
+            setViewport({ start: 0, end: Math.min(size, 60) });
             if (scrollRef.current) scrollRef.current.scrollTop = 0;
         } catch (e) {
             setError(errString(e));
@@ -219,17 +506,28 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     return (
         <div className="page">
             <div className="page-toolbar">
-                <select value={topic} onChange={(e) => onTopicChange(e.target.value)} style={{ width: 260 }}>
+                <select
+                    value={topic}
+                    onChange={(e) => onTopicChange(e.target.value)}
+                    style={{ width: 260 }}
+                    disabled={tailing}
+                >
                     {topics.map((tn) => (
                         <option key={tn} value={tn}>{tn}</option>
                     ))}
                 </select>
-                <select value={mode} onChange={(e) => setMode(e.target.value as Mode)} style={{ width: 140 }}>
+                <select
+                    value={mode}
+                    onChange={(e) => setMode(e.target.value as Mode)}
+                    style={{ width: 140 }}
+                    disabled={tailing}
+                >
                     <option value="beginning">{t(lang, "consume.mode.beginning")}</option>
                     <option value="end">{t(lang, "consume.mode.end")}</option>
                     <option value="offsetAfter">{t(lang, "consume.mode.offsetAfter")}</option>
                     <option value="offsetBefore">{t(lang, "consume.mode.offsetBefore")}</option>
                     <option value="timestamp">{t(lang, "consume.mode.timestamp")}</option>
+                    <option value="tail">{t(lang, "consume.mode.tail")}</option>
                 </select>
                 {(mode === "offsetAfter" || mode === "offsetBefore") && (
                     <input
@@ -240,12 +538,20 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                     />
                 )}
                 {mode === "timestamp" && (
-                    <input
-                        style={{ width: 220 }}
-                        placeholder={t(lang, "consume.timestamp")}
-                        value={timestamp}
-                        onChange={(e) => setTimestamp(e.target.value)}
-                    />
+                    <>
+                        <input
+                            style={{ width: 220 }}
+                            placeholder={t(lang, "consume.timestamp.start")}
+                            value={timestampStart}
+                            onChange={(e) => setTimestampStart(e.target.value)}
+                        />
+                        <input
+                            style={{ width: 220 }}
+                            placeholder={t(lang, "consume.timestamp.end")}
+                            value={timestampEnd}
+                            onChange={(e) => setTimestampEnd(e.target.value)}
+                        />
+                    </>
                 )}
                 <input
                     type="number"
@@ -253,6 +559,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                     style={{ width: 90 }}
                     value={maxMessages}
                     onChange={(e) => setMaxMessages(Number(e.target.value) || 0)}
+                    disabled={mode === "tail"}
                 />
                 <input
                     type="number"
@@ -260,13 +567,51 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                     style={{ width: 90 }}
                     value={timeoutMs}
                     onChange={(e) => setTimeoutMs(Number(e.target.value) || 0)}
+                    disabled={mode === "tail"}
                 />
-                <button className="primary" onClick={handleFetch} disabled={loading || !topic}>
-                    {loading ? t(lang, "consume.fetching") : t(lang, "consume.fetch")}
+                <button
+                    className={loading || tailing ? "danger" : "primary"}
+                    onClick={loading || tailing ? () => { void CancelConsume(profileId); } : handleFetch}
+                    disabled={!topic}
+                >
+                    {tailing
+                        ? t(lang, "consume.stop")
+                        : loading
+                        ? t(lang, "consume.cancel")
+                        : t(lang, "consume.fetch")}
                 </button>
                 <span className="count-pill">
                     {t(lang, "consume.shownOf", { shown: filtered.length, total: messages.length })}
                 </span>
+                {mode === "timestamp" && pageCursors.length > 0 && (
+                    <>
+                        <button onClick={handleFirstPage} disabled={pageIdx === 0 || loading}>
+                            {t(lang, "consume.page.first")}
+                        </button>
+                        <button onClick={handlePrevPage} disabled={pageIdx === 0 || loading}>
+                            {t(lang, "consume.page.prev")}
+                        </button>
+                        <span className="count-pill">
+                            {totalPages !== null
+                                ? t(lang, "consume.page.labelOf", { n: pageIdx + 1, total: totalPages })
+                                : t(lang, "consume.page.label", { n: pageIdx + 1 })}
+                        </span>
+                        <button onClick={handleNextPage} disabled={!nextCursor || loading}>
+                            {t(lang, "consume.page.next")}
+                        </button>
+                        <button
+                            onClick={handleLastPage}
+                            disabled={loading || (totalPages !== null && pageIdx === totalPages - 1)}
+                        >
+                            {t(lang, "consume.page.last")}
+                        </button>
+                        {totalCount !== null && (
+                            <span className="muted" style={{ fontSize: 11 }}>
+                                {t(lang, "consume.page.totalCount", { n: totalCount.toLocaleString() })}
+                            </span>
+                        )}
+                    </>
+                )}
                 <div className="grow" />
                 <button onClick={handleExport} disabled={filtered.length === 0}>
                     {t(lang, "consume.export")}
@@ -358,7 +703,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                                 }}
                                                 style={{ height: ROW_HEIGHT }}
                                             >
-                                                <td className="mono muted" style={cellStyle}>{viewport.start + i + 1}</td>
+                                                <td className="mono muted" style={cellStyle}>{currentPageStart + viewport.start + i + 1}</td>
                                                 <td style={cellStyle}>{m.partition}</td>
                                                 <td className="mono" style={cellStyle}>{m.offset}</td>
                                                 <td className="mono" style={cellStyle} onContextMenu={openTsCtxMenu} title={formatLocalHuman(m.timestampMs)}>{formatTs(m.timestampMs)}</td>

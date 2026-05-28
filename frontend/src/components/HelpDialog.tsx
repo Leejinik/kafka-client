@@ -187,14 +187,41 @@ function buildSectionsKo(): Section[] {
             title: "5. 조회",
             body: (
                 <>
-                    <p>모드: <b>처음부터 / 끝에서 / 오프셋 이후 / 오프셋 이전 / 타임스탬프</b>.</p>
+                    <p>모드: <b>처음부터 / 끝에서 / 오프셋 이후 / 오프셋 이전 / 타임스탬프 범위 / tail -f</b>.</p>
                     <ul>
                         <li><b>오프셋 이후</b> — 입력한 오프셋부터 (포함) 그 이후로 limit개. 입력값이 그리드 첫 행에 노출됨</li>
                         <li><b>오프셋 이전</b> — 입력한 오프셋까지 (포함) 그 이전으로 limit개. 입력값은 그리드 마지막 행에 위치 (Kafka는 항상 offset 오름차순 반환). Offset 컬럼을 ▼ 정렬하면 입력값이 row 1로 옴</li>
-                        <li>두 모드 모두 입력값을 <b>모든 파티션</b>에 동일 적용. 멀티 파티션이면 limit이 파티션 수로 나뉘어 분배됨</li>
+                        <li>오프셋 두 모드 모두 입력값을 <b>모든 파티션</b>에 동일 적용. 멀티 파티션이면 limit이 파티션 수로 나뉘어 분배됨</li>
                     </ul>
+
+                    <p><b>타임스탬프 범위</b> — 시작/종료 타임스탬프를 받아 그 사이 메시지를 가져옵니다. 종료는 비워두면 현재 log end까지.</p>
+                    <ul>
+                        <li>윈도우 내 메시지가 수억 건이어도 OK — <b>한 페이지에 {`최대 메시지 수`}만큼</b> (기본 1000건) 페이지네이션</li>
+                        <li>입력 형식: Unix ms 숫자 또는 ISO 8601 문자열 (<M>2026-05-28T10:00:00</M>)</li>
+                        <li>1페이지 가져온 직후 카운트 옆에 페이지 컨트롤 표시:
+                            <ul>
+                                <li><M>« 처음</M> / <M>← 이전</M> / <M>페이지 N / 총M</M> / <M>다음 →</M> / <M>마지막 »</M></li>
+                                <li>오른쪽에 <M>범위 내 총 N건</M> 라벨로 윈도우 전체 건수 표시</li>
+                            </ul>
+                        </li>
+                        <li><M>#</M> 컬럼은 페이지를 넘어가도 누적 증가 (페이지 2 = 1001 ~ ...)</li>
+                        <li><M>마지막 »</M>으로 점프하면 중간 페이지 cursor가 없어 ← 이전이 잠깁니다. « 처음으로 돌아가서 순차 탐색 가능</li>
+                    </ul>
+
+                    <p><b>tail -f (실시간)</b> — 토픽의 현재 끝부터 새로 들어오는 메시지를 스트리밍.</p>
+                    <ul>
+                        <li>모드 선택 즉시 시작, limit / timeout 무시. 가져오기 버튼이 <b>중지</b>로 토글</li>
+                        <li>중지 누르면 모드/limit/timeout이 기본값(끝에서/1000/8000)으로 복원, 수신된 메시지는 그대로 유지</li>
+                        <li><b>자동 스크롤</b> (follow): 새 메시지가 도착할 때마다 그리드 맨 아래를 따라감</li>
+                        <li><b>마우스 휠</b> → follow 해제, 그 자리에 멈춤</li>
+                        <li><b>Shift + G</b> → 다시 맨 아래로 점프 + follow 재개</li>
+                        <li><b>Ctrl + C</b> (이스터에그) → SIGINT처럼 tail 종료. 텍스트 선택 중이거나 입력창 포커스 시엔 일반 복사로 동작</li>
+                    </ul>
+
+                    <p><b>가져오기 / 중단</b> — 일반 조회 중에도 결과가 다 차기 전에 <b>중단</b> 버튼으로 취소 가능. 그때까지 모은 메시지가 그리드에 표시됩니다.</p>
+
                     <p><b>가져오기 옆 카운트</b> <M>{"{shown} / {total} 건"}</M> — 가져온 총 건수와 (검색 시) 필터 후 표시 건수. limit이 1000이어도 989건만 있으면 989로 표시.</p>
-                    <p>그리드 맨 왼쪽 <M>#</M> 컬럼은 1부터 시작하는 행 인덱스. 스크롤 위치를 파악하거나 정렬·필터된 결과의 순서를 확인하는 용도.</p>
+                    <p>그리드 맨 왼쪽 <M>#</M> 컬럼은 1부터 시작하는 행 인덱스 (페이지네이션 모드에서는 페이지 누적).</p>
                     <p><b>헤더 클릭으로 정렬 cycle</b> (없음 → 내림차순 ▼ → 오름차순 ▲ → 없음):</p>
                     <ul>
                         <li><b>Offset 컬럼</b> — 같은 파티션 내에서 offset 순. 멀티 파티션이면 파티션 번호 우선</li>
@@ -332,14 +359,41 @@ function buildSectionsEn(): Section[] {
             title: "5. Consume",
             body: (
                 <>
-                    <p>Modes: <b>Beginning / End / Offset (after) / Offset (before) / Timestamp</b>.</p>
+                    <p>Modes: <b>Beginning / End / Offset (after) / Offset (before) / Timestamp range / tail -f</b>.</p>
                     <ul>
                         <li><b>Offset (after)</b> — from the given offset inclusive, forward, up to limit. The input value shows up as row 1</li>
                         <li><b>Offset (before)</b> — up to the given offset inclusive, backward, up to limit. Since Kafka always returns records in ascending offset order, the input value ends up as the last row. Click the Offset header ▼ to bring it to row 1</li>
-                        <li>Both modes apply the same offset to <b>every partition</b>. For multi-partition topics the limit is split evenly across partitions</li>
+                        <li>Both offset modes apply the same offset to <b>every partition</b>. For multi-partition topics the limit is split evenly across partitions</li>
                     </ul>
+
+                    <p><b>Timestamp range</b> — fetches messages whose timestamps fall between the start/end inputs. Leave end blank to mean "current log end".</p>
+                    <ul>
+                        <li>Window can hold hundreds of millions of records — results are <b>paginated by the Max-messages input</b> (default 1000 per page)</li>
+                        <li>Input format: Unix ms or ISO 8601 (<M>2026-05-28T10:00:00</M>)</li>
+                        <li>After the first page, pagination controls appear next to the count pill:
+                            <ul>
+                                <li><M>« First</M> / <M>← Prev</M> / <M>Page N / total</M> / <M>Next →</M> / <M>Last »</M></li>
+                                <li>A <M>N total in range</M> label on the right shows the window's total record count</li>
+                            </ul>
+                        </li>
+                        <li>The <M>#</M> column keeps incrementing across page turns (page 2 starts at 1001…)</li>
+                        <li>Jumping with <M>Last »</M> skips the cursor history of intermediate pages, so ← Prev is disabled. Use « First to start sequential pagination again</li>
+                    </ul>
+
+                    <p><b>tail -f (live)</b> — streams new records from the topic's current end.</p>
+                    <ul>
+                        <li>Starts the instant the mode is selected; limit / timeout are ignored. The Fetch button toggles to <b>Stop</b></li>
+                        <li>Stop restores mode/limit/timeout to defaults (End / 1000 / 8000); received messages stay on screen</li>
+                        <li><b>Auto-follow</b>: each new batch pins the view to the bottom</li>
+                        <li><b>Mouse wheel</b> → pauses follow, freezes at that position</li>
+                        <li><b>Shift + G</b> → snaps back to bottom and resumes follow</li>
+                        <li><b>Ctrl + C</b> (easter egg) → stops tail like SIGINT. When text is selected or an input has focus it falls back to normal copy</li>
+                    </ul>
+
+                    <p><b>Fetch / Cancel</b> — for ordinary fetches you can also cancel mid-way with the <b>Cancel</b> button; whatever was collected so far still shows in the grid.</p>
+
                     <p><b>Count pill next to Fetch</b> <M>{"{shown} / {total}"}</M> — total records fetched and (when search is active) how many remain after filtering. If limit is 1000 but only 989 exist, the pill shows 989.</p>
-                    <p>The leftmost <M>#</M> column is a 1-based row index — useful for tracking scroll position or the order after sorting/filtering.</p>
+                    <p>The leftmost <M>#</M> column is a 1-based row index (cumulative across pages in pagination mode).</p>
                     <p><b>Click a sortable header to cycle sort</b> (none → desc ▼ → asc ▲ → none):</p>
                     <ul>
                         <li><b>Offset column</b> — by offset within a partition. Multi-partition: partition first, then offset</li>

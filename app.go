@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"sync"
 
 	"kafka-client/internal/kafka"
 	"kafka-client/internal/profile"
+
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App is the root struct bound to the Wails runtime. Every exported method
@@ -15,6 +19,11 @@ type App struct {
 	ctx      context.Context
 	profiles *profile.Store
 	manager  *kafka.Manager
+
+	// In-flight Consume() cancel functions, keyed by profileID. The UI is
+	// single-fetch per profile so we keep at most one entry per id.
+	consumeMu     sync.Mutex
+	consumeCancel map[string]context.CancelFunc
 }
 
 // NewApp wires up the dependencies.
@@ -29,8 +38,9 @@ func NewApp() *App {
 		fmt.Println("profile store init failed:", err)
 	}
 	return &App{
-		profiles: store,
-		manager:  kafka.NewManager(),
+		profiles:      store,
+		manager:       kafka.NewManager(),
+		consumeCancel: map[string]context.CancelFunc{},
 	}
 }
 
@@ -184,7 +194,95 @@ func (a *App) ResetGroupOffsetsForTopic(
 // --- Consume / Produce --------------------------------------------------
 
 func (a *App) Consume(profileID string, opts kafka.ConsumeOptions) ([]kafka.Message, error) {
-	return a.manager.Consume(a.ctx, profileID, opts)
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.consumeMu.Lock()
+	// If somehow an older Consume is still registered for this profile,
+	// cancel it before installing our own — the UI shouldn't allow this,
+	// but it costs nothing to be defensive.
+	if prev, ok := a.consumeCancel[profileID]; ok && prev != nil {
+		prev()
+	}
+	a.consumeCancel[profileID] = cancel
+	a.consumeMu.Unlock()
+	defer func() {
+		a.consumeMu.Lock()
+		delete(a.consumeCancel, profileID)
+		a.consumeMu.Unlock()
+		cancel()
+	}()
+	return a.manager.Consume(ctx, profileID, opts)
+}
+
+// ConsumeRange fetches one page of records whose timestamps fall in
+// [StartMs, EndMs]. The returned page includes a Cursor; pass it back as
+// opts.Cursor on the next call to retrieve the following page. Uses the
+// same cancel slot as Consume so CancelConsume() aborts an in-flight page.
+func (a *App) ConsumeRange(profileID string, opts kafka.ConsumeRangeOptions) (kafka.ConsumeRangePage, error) {
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.consumeMu.Lock()
+	if prev, ok := a.consumeCancel[profileID]; ok && prev != nil {
+		prev()
+	}
+	a.consumeCancel[profileID] = cancel
+	a.consumeMu.Unlock()
+	defer func() {
+		a.consumeMu.Lock()
+		delete(a.consumeCancel, profileID)
+		a.consumeMu.Unlock()
+		cancel()
+	}()
+	return a.manager.ConsumeRange(ctx, profileID, opts)
+}
+
+// CancelConsume cancels an in-flight Consume() for the given profile. Returns
+// whatever has been collected so far via the original Consume call (the
+// manager honours ctx cancellation by returning partial results). The same
+// cancel slot is shared with StartTailConsume so this also stops a tail.
+func (a *App) CancelConsume(profileID string) {
+	a.consumeMu.Lock()
+	cancel := a.consumeCancel[profileID]
+	a.consumeMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// StartTailConsume kicks off a continuous "tail -f" consume against `topic`
+// for the given profile. Records are streamed to the frontend via the
+// event "consume.tail.batch:<profileID>" (payload: []kafka.Message).
+// On natural termination or cancel, "consume.tail.stopped:<profileID>" fires
+// (payload: optional error string, empty on clean stop).
+//
+// CancelConsume(profileID) stops the tail.
+func (a *App) StartTailConsume(profileID, topic string) error {
+	if topic == "" {
+		return errors.New("topic is required")
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.consumeMu.Lock()
+	if prev := a.consumeCancel[profileID]; prev != nil {
+		prev()
+	}
+	a.consumeCancel[profileID] = cancel
+	a.consumeMu.Unlock()
+
+	go func() {
+		defer func() {
+			a.consumeMu.Lock()
+			delete(a.consumeCancel, profileID)
+			a.consumeMu.Unlock()
+			cancel()
+		}()
+		err := a.manager.TailConsume(ctx, profileID, topic, func(batch []kafka.Message) {
+			wailsruntime.EventsEmit(a.ctx, "consume.tail.batch:"+profileID, batch)
+		})
+		errMsg := ""
+		if err != nil && !errors.Is(err, context.Canceled) {
+			errMsg = err.Error()
+		}
+		wailsruntime.EventsEmit(a.ctx, "consume.tail.stopped:"+profileID, errMsg)
+	}()
+	return nil
 }
 
 func (a *App) Produce(profileID string, req kafka.ProduceRequest) (kafka.ProduceResult, error) {
