@@ -20,12 +20,9 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -177,12 +174,10 @@ func compareSemver(a, b string) int {
 }
 
 // Apply downloads the asset, stashes the release notes for the next launch,
-// writes the swap helper, and spawns it detached. The caller must quit the
-// process shortly after this returns so the helper can replace the binary.
+// and hands off to the platform-specific swap helper (see updater_windows.go
+// / updater_other.go). The caller must quit the process shortly after this
+// returns so the helper can replace the binary.
 func (u *Updater) Apply(ctx context.Context, info UpdateInfo) error {
-	if runtime.GOOS != "windows" {
-		return errors.New("auto-update is currently supported on Windows only")
-	}
 	if !info.Available || info.DownloadURL == "" {
 		return errors.New("no update available")
 	}
@@ -193,7 +188,6 @@ func (u *Updater) Apply(ctx context.Context, info UpdateInfo) error {
 	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
 		exePath = resolved
 	}
-	exeDir := filepath.Dir(exePath)
 	newPath := exePath + ".new"
 
 	if err := u.download(ctx, info.DownloadURL, newPath); err != nil {
@@ -204,41 +198,7 @@ func (u *Updater) Apply(ctx context.Context, info UpdateInfo) error {
 	// write fails; the worst case is the user doesn't get a notes popup.
 	_ = u.SavePendingNotes(PendingNotes{Version: info.LatestVersion, Notes: info.ReleaseNotes})
 
-	helper := filepath.Join(exeDir, "update.cmd")
-	if err := os.WriteFile(helper, []byte(buildUpdateScript(exePath, newPath)), 0644); err != nil {
-		return fmt.Errorf("write helper: %w", err)
-	}
-	cmd := exec.Command("cmd.exe", "/C", helper)
-	// DETACHED_PROCESS | CREATE_NO_WINDOW — keep the helper alive after we exit
-	// and don't pop a console window.
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow:    true,
-		CreationFlags: 0x00000008 | 0x08000000,
-	}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("launch helper: %w", err)
-	}
-	// Don't wait — the helper outlives us by design.
-	_ = cmd.Process.Release()
-	return nil
-}
-
-// buildUpdateScript writes a cmd.exe script that loops until it can move the
-// downloaded binary over the running one (i.e. until our process has exited
-// and released the file lock), then re-launches us and deletes itself.
-func buildUpdateScript(exePath, newPath string) string {
-	var sb strings.Builder
-	sb.WriteString("@echo off\r\n")
-	sb.WriteString("setlocal\r\n")
-	// Give the parent ~1s to exit before the first attempt.
-	sb.WriteString(":loop\r\n")
-	sb.WriteString("timeout /t 1 /nobreak >nul 2>&1\r\n")
-	sb.WriteString(fmt.Sprintf("move /Y \"%s\" \"%s\" >nul 2>&1\r\n", newPath, exePath))
-	sb.WriteString("if errorlevel 1 goto loop\r\n")
-	sb.WriteString(fmt.Sprintf("start \"\" \"%s\"\r\n", exePath))
-	// Self-delete: jump past EOF, then delete this script.
-	sb.WriteString("(goto) 2>nul & del \"%~f0\"\r\n")
-	return sb.String()
+	return applyPlatform(exePath, newPath)
 }
 
 func (u *Updater) download(ctx context.Context, url, dst string) error {
