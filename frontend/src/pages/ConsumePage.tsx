@@ -40,11 +40,54 @@ type Mode = "beginning" | "end" | "offsetAfter" | "offsetBefore" | "timestamp" |
 const DEFAULT_MODE: Mode = "end";
 const DEFAULT_MAX = 1000;
 const DEFAULT_TIMEOUT = 8000;
+
+// Reconciles whatever the user typed in the "max messages" box back to a
+// number the backend understands. Rules (mirrors the bug report):
+//   - empty / 0 / NaN / < -1  → 1000 (default)
+//   - -1 + non-timestamp mode → -1 (unlimited; backend reads until timeout)
+//   - -1 + timestamp mode     → 1000 (pagination needs a real page size)
+//   - any positive            → as-is
+function normalizeMax(text: string, mode: Mode): number {
+    const trimmed = text.trim();
+    if (trimmed === "") return DEFAULT_MAX;
+    const n = parseInt(trimmed, 10);
+    if (Number.isNaN(n)) return DEFAULT_MAX;
+    if (n === -1) return mode === "timestamp" ? DEFAULT_MAX : -1;
+    if (n <= 0) return DEFAULT_MAX;
+    return n;
+}
 type Target = "value" | "key" | "headers";
 type TsFormat = "local" | "unix";
 
 const ROW_HEIGHT = 28;
 const TS_FORMAT_KEY = "consume.tsFormat";
+
+// Discrete pagination unit. Used by both the timestamp ConsumeRange path and
+// the cursor-based Consume path so the user can pre-size each page for
+// advanced-search/grep purposes (larger page = more rows searched in one go).
+// Kept small + closed for now — three values cover the practical range
+// (1k for snappy browsing, 50k for "search a big window").
+const PAGE_SIZE_KEY = "consume.pageSize";
+const PAGE_SIZES = [1000, 10000, 50000] as const;
+type PageSize = typeof PAGE_SIZES[number];
+
+// Per-card highlight colors. Index 0 uses the active theme's default chip/row
+// look (null sentinel); 1..4 are fixed brand-agnostic hues so cards remain
+// distinguishable across light/dark/onion themes.
+type CardColor = {
+    chipBg: string;
+    chipBorder: string;
+    chipFg: string;
+    rowBg: string;
+} | null;
+
+const CARD_COLORS: CardColor[] = [
+    null,
+    { chipBg: "rgba(220, 38, 38, 0.16)",  chipBorder: "rgba(220, 38, 38, 0.55)",  chipFg: "#dc2626", rowBg: "rgba(220, 38, 38, 0.12)"  },
+    { chipBg: "rgba(37, 99, 235, 0.16)",  chipBorder: "rgba(37, 99, 235, 0.55)",  chipFg: "#2563eb", rowBg: "rgba(37, 99, 235, 0.12)"  },
+    { chipBg: "rgba(22, 163, 74, 0.16)",  chipBorder: "rgba(22, 163, 74, 0.55)",  chipFg: "#16a34a", rowBg: "rgba(22, 163, 74, 0.12)"  },
+    { chipBg: "rgba(147, 51, 234, 0.16)", chipBorder: "rgba(147, 51, 234, 0.55)", chipFg: "#9333ea", rowBg: "rgba(147, 51, 234, 0.12)" },
+];
 
 export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChange }: Props) {
     const [topics, setTopics] = useState<string[]>([]);
@@ -53,7 +96,18 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     const [timestampStart, setTimestampStart] = useState<string>("");
     const [timestampEnd, setTimestampEnd] = useState<string>("");
     const [maxMessages, setMaxMessages] = useState<number>(DEFAULT_MAX);
+    // Mirrors maxMessages while the user is editing. The text state lets the
+    // input be momentarily empty (otherwise backspace-to-clear gets stuck at
+    // "0", which is awful UX). The number state is what handleFetch /
+    // pagination actually consume; the two are reconciled on blur and on
+    // fetch via normalizeMax().
+    const [maxMessagesInput, setMaxMessagesInput] = useState<string>(String(DEFAULT_MAX));
     const [timeoutMs, setTimeoutMs] = useState<number>(DEFAULT_TIMEOUT);
+    const [pageSize, setPageSize] = useState<PageSize>(() => {
+        const v = parseInt(localStorage.getItem(PAGE_SIZE_KEY) || "", 10);
+        return (PAGE_SIZES as readonly number[]).includes(v) ? (v as PageSize) : 1000;
+    });
+    useEffect(() => { localStorage.setItem(PAGE_SIZE_KEY, String(pageSize)); }, [pageSize]);
 
     // Pagination state for timestamp-range mode. pageCursors[i] is the
     // cursor needed to (re)fetch page i; pageCursors[0] is always [] (the
@@ -68,8 +122,8 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     const [nextCursor, setNextCursor] = useState<kafka.CursorEntry[] | null>(null);
     const [currentPageStart, setCurrentPageStart] = useState(0);
     const [totalCount, setTotalCount] = useState<number | null>(null);
-    const totalPages = totalCount !== null && maxMessages > 0
-        ? Math.max(1, Math.ceil(totalCount / maxMessages))
+    const totalPages = totalCount !== null && pageSize > 0
+        ? Math.max(1, Math.ceil(totalCount / pageSize))
         : null;
 
     const [messages, setMessages] = useState<kafka.Message[]>([]);
@@ -86,10 +140,11 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     const [caseSensitive, setCaseSensitive] = useState(false);
 
     // Advanced search: each card holds a list of CSV-parsed tokens. A message
-    // matches the card iff its target field contains every token as a
-    // case-insensitive substring. Cards are independent — each renders its
-    // own count; the grid itself is NOT filtered (only the basic search
-    // input filters). Max 5 cards.
+    // matches a card iff its target field contains every token as a
+    // case-insensitive substring (AND within a card). The grid is filtered to
+    // the OR-union of all non-empty cards; matched rows are tinted with that
+    // card's color. If no cards exist or every card has zero tokens, the grid
+    // shows the full Fetch result. Max 5 cards.
     type SearchCard = { id: number; tokens: string[] };
     const [advancedSearch, setAdvancedSearch] = useState(false);
     const [searchCards, setSearchCards] = useState<SearchCard[]>([{ id: 1, tokens: [] }]);
@@ -150,6 +205,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
             // Form returns to the initial defaults — but the messages stay.
             setMode(DEFAULT_MODE);
             setMaxMessages(DEFAULT_MAX);
+            setMaxMessagesInput(String(DEFAULT_MAX));
             setTimeoutMs(DEFAULT_TIMEOUT);
         });
         return () => {
@@ -252,6 +308,72 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [profileId]);
 
+    // Pagination kind for this render. "timestamp" uses ConsumeRange + a real
+    // total count; "cursor" uses Consume + per-partition cursors and is what
+    // maxMessages === -1 maps to for the four non-timestamp finite modes; null
+    // means no pagination (single shot fetch).
+    type PagingKind = "timestamp" | "cursor" | null;
+    const pagingKind: PagingKind = useMemo(() => {
+        if (mode === "timestamp") return "timestamp";
+        if (mode === "tail") return null;
+        if (maxMessages === -1) return "cursor";
+        return null;
+    }, [mode, maxMessages]);
+
+    // The direction the current mode reads in. Used by cursor pagination to
+    // decide whether the "next" cursor is max(offset)+1 (forward) or
+    // min(offset)-1 (backward).
+    const isForwardMode = mode === "beginning" || mode === "offsetAfter";
+
+    // Compute the cursor (per-partition next-offset-to-read) from a returned
+    // page of messages, given the read direction. Empty array means "no
+    // continuation — we've reached the boundary of the log".
+    const computeCursor = (msgs: kafka.Message[]): kafka.CursorEntry[] => {
+        if (msgs.length === 0) return [];
+        const acc = new Map<number, number>();
+        for (const msg of msgs) {
+            const cur = acc.get(msg.partition);
+            const off = msg.offset as unknown as number;
+            if (cur === undefined) acc.set(msg.partition, off);
+            else if (isForwardMode && off > cur) acc.set(msg.partition, off);
+            else if (!isForwardMode && off < cur) acc.set(msg.partition, off);
+        }
+        const out: kafka.CursorEntry[] = [];
+        acc.forEach((off, p) => {
+            out.push(kafka.CursorEntry.createFrom({
+                partition: p,
+                offset: isForwardMode ? off + 1 : off - 1,
+            }));
+        });
+        return out;
+    };
+
+    // Reset pagination state whenever the seek mode or page size changes —
+    // captured cursors are tied to those values and aren't comparable across
+    // a resize.
+    useEffect(() => {
+        setPageCursors([]);
+        setPageSizes([]);
+        setPageIdx(0);
+        setCurrentPageStart(0);
+        setTotalCount(null);
+        setNextCursor(null);
+    }, [mode, pageSize]);
+
+    // Page-size change auto-refetches the first page so the user sees the
+    // resized result immediately instead of having to click 가져오기 again.
+    // The initial render is suppressed by the `messages.length === 0` guard
+    // (no prior result to refresh). Mode changes deliberately do NOT trigger
+    // this — switching to e.g. timestamp requires the user to enter the
+    // range first.
+    useEffect(() => {
+        if (messages.length === 0) return;
+        if (!topic || tailing || loading) return;
+        if (mode === "tail") return;
+        void handleFetch();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pageSize]);
+
     const sortedMessages = useMemo(() => {
         if (!sort) return messages;
         const arr = [...messages];
@@ -275,9 +397,23 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         return Object.entries(m.headers).map(([k, v]) => `${k}=${v}`).join("\n");
     };
 
+    // Lowercased tokens per card, memoized so per-row matching during render
+    // doesn't keep re-lowercasing the same strings.
+    const lowerCardTokens = useMemo(
+        () => searchCards.map((c) => c.tokens.map((t) => t.toLowerCase())),
+        [searchCards],
+    );
+
     const filtered = useMemo(() => {
-        // Advanced search mode: counts are shown per card, grid is unfiltered.
-        if (advancedSearch) return sortedMessages;
+        if (advancedSearch) {
+            const active = lowerCardTokens.filter((tks) => tks.length > 0);
+            // No active card → show full fetch result, same as exiting advanced mode.
+            if (active.length === 0) return sortedMessages;
+            return sortedMessages.filter((m) => {
+                const h = haystackOf(m).toLowerCase();
+                return active.some((tokens) => tokens.every((t) => h.includes(t)));
+            });
+        }
         const q = search.trim();
         if (!q) return sortedMessages;
         let matcher: (s: string) => boolean;
@@ -294,23 +430,35 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         }
         return sortedMessages.filter((m) => matcher(haystackOf(m)));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [advancedSearch, sortedMessages, search, useRegex, caseSensitive, target]);
+    }, [advancedSearch, sortedMessages, search, useRegex, caseSensitive, target, lowerCardTokens]);
 
     // Per-card match counts. A card with no tokens reports 0.
     const cardCounts = useMemo(() => {
         if (!advancedSearch) return [];
         const haystacks = messages.map((m) => haystackOf(m).toLowerCase());
-        return searchCards.map((card) => {
-            if (card.tokens.length === 0) return 0;
-            const lower = card.tokens.map((t) => t.toLowerCase());
+        return lowerCardTokens.map((tokens) => {
+            if (tokens.length === 0) return 0;
             let n = 0;
             for (const h of haystacks) {
-                if (lower.every((t) => h.includes(t))) n++;
+                if (tokens.every((t) => h.includes(t))) n++;
             }
             return n;
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [advancedSearch, messages, searchCards, target]);
+    }, [advancedSearch, messages, lowerCardTokens, target]);
+
+    // Returns the color of the first non-empty card that matches the message,
+    // or null if advanced search is off / no card matches. Used to tint rows.
+    const cardColorOf = (m: kafka.Message): CardColor => {
+        if (!advancedSearch) return null;
+        const h = haystackOf(m).toLowerCase();
+        for (let i = 0; i < lowerCardTokens.length; i++) {
+            const tokens = lowerCardTokens[i];
+            if (tokens.length === 0) continue;
+            if (tokens.every((t) => h.includes(t))) return CARD_COLORS[i] ?? null;
+        }
+        return null;
+    };
 
     const visible = filtered.slice(viewport.start, viewport.end);
     const padTop = viewport.start * ROW_HEIGHT;
@@ -334,6 +482,22 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         return Number.isNaN(parsed) ? 0 : parsed;
     };
 
+    // One page of cursor-based non-timestamp consume. Cursor empty = first
+    // page; on subsequent pages the FE passes back the cursor returned by the
+    // previous call (computed from message offsets).
+    const fetchConsumePage = async (cursor: kafka.CursorEntry[]): Promise<kafka.Message[]> => {
+        const opts = kafka.ConsumeOptions.createFrom({
+            topic,
+            mode,
+            offset: mode === "offsetAfter" || mode === "offsetBefore" ? Number(offset) || 0 : 0,
+            timestampMs: 0,
+            maxMessages: pageSize,
+            timeoutMs,
+            cursor,
+        });
+        return await Consume(profileId, opts);
+    };
+
     const fetchRangePage = async (cursor: kafka.CursorEntry[], fromEnd = false) => {
         const start = parseTs(timestampStart);
         if (start <= 0) throw new Error(t(lang, "consume.timestamp.start"));
@@ -342,7 +506,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
             topic,
             startMs: start,
             endMs: end,
-            maxMessages,
+            maxMessages: pageSize,
             timeoutMs,
             cursor: fromEnd ? [] : cursor,
             fromEnd,
@@ -350,8 +514,36 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         return await ConsumeRange(profileId, opts);
     };
 
+    // Re-normalize max messages whenever the mode changes. The same -1
+    // ("unlimited") that's valid for the offset/end modes must collapse back
+    // to 1000 the moment the user switches to timestamp range, otherwise
+    // pagination divides by zero.
+    useEffect(() => {
+        const n = normalizeMax(maxMessagesInput, mode);
+        if (n !== maxMessages) setMaxMessages(n);
+        const text = String(n);
+        if (text !== maxMessagesInput) setMaxMessagesInput(text);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mode]);
+
     const handleFetch = async () => {
         if (!topic || mode === "tail") return;
+        // Catch the case where the user pressed Fetch via keyboard while the
+        // input still has a transient empty/0 value (onBlur hasn't fired yet).
+        const effectiveMax = normalizeMax(maxMessagesInput, mode);
+        if (effectiveMax !== maxMessages) {
+            setMaxMessages(effectiveMax);
+            setMaxMessagesInput(String(effectiveMax));
+        }
+        // Routing decision must use effectiveMax, not the memoized
+        // `pagingKind`. The memo still reflects the previous render's
+        // maxMessages because the setMaxMessages above is async — without
+        // this, typing -1 + immediate Fetch falls through to the single-shot
+        // path on the very first call and pagination controls never appear.
+        const effectivePaging: PagingKind =
+            mode === "timestamp" ? "timestamp" :
+            effectiveMax === -1 ? "cursor" :
+            null;
         setLoading(true);
         setError(null);
         try {
@@ -370,12 +562,30 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                 if (scrollRef.current) scrollRef.current.scrollTop = 0;
                 return;
             }
+            // Cursor pagination path (max=-1, non-timestamp): always ask for
+            // one page (1000) and capture the next cursor so the user can
+            // walk forward without freezing the UI on a giant single fetch.
+            if (effectivePaging === "cursor") {
+                const out = await fetchConsumePage([]);
+                const size = out.length;
+                setMessages(out);
+                setSelected(size > 0 ? out[0] : null);
+                setPageCursors([[]]);
+                setPageSizes([size]);
+                setPageIdx(0);
+                setCurrentPageStart(0);
+                setTotalCount(null);
+                setNextCursor(size < pageSize ? null : computeCursor(out));
+                setViewport({ start: 0, end: Math.min(size, 60) });
+                if (scrollRef.current) scrollRef.current.scrollTop = 0;
+                return;
+            }
             const opts = kafka.ConsumeOptions.createFrom({
                 topic,
                 mode,
                 offset: mode === "offsetAfter" || mode === "offsetBefore" ? Number(offset) || 0 : 0,
                 timestampMs: 0,
-                maxMessages,
+                maxMessages: effectiveMax,
                 timeoutMs,
             });
             const out = await Consume(profileId, opts);
@@ -402,6 +612,28 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         setLoading(true);
         setError(null);
         try {
+            if (pagingKind === "cursor") {
+                const out = await fetchConsumePage(nextCursor);
+                const size = out.length;
+                setMessages(out);
+                setSelected(size > 0 ? out[0] : null);
+                setPageCursors((prev) => {
+                    const next = prev.slice(0, pageIdx + 1);
+                    next.push(nextCursor);
+                    return next;
+                });
+                setPageSizes((prev) => {
+                    const next = prev.slice(0, pageIdx + 1);
+                    next.push(size);
+                    return next;
+                });
+                setPageIdx((i) => i + 1);
+                setCurrentPageStart((s) => s + currentSize);
+                setNextCursor(size < pageSize ? null : computeCursor(out));
+                setViewport({ start: 0, end: Math.min(size, 60) });
+                if (scrollRef.current) scrollRef.current.scrollTop = 0;
+                return;
+            }
             const page = await fetchRangePage(nextCursor);
             const size = page.messages?.length || 0;
             setMessages(page.messages || []);
@@ -436,6 +668,23 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
             const prevIdx = pageIdx - 1;
             const cursor = pageCursors[prevIdx] || [];
             const prevSize = pageSizes[prevIdx] ?? 0;
+            if (pagingKind === "cursor") {
+                const out = await fetchConsumePage(cursor);
+                const size = out.length;
+                setMessages(out);
+                setSelected(size > 0 ? out[0] : null);
+                setPageSizes((prev) => {
+                    const next = prev.slice();
+                    next[prevIdx] = size;
+                    return next;
+                });
+                setPageIdx(prevIdx);
+                setCurrentPageStart((s) => Math.max(0, s - (prevSize || size)));
+                setNextCursor(size < pageSize ? null : computeCursor(out));
+                setViewport({ start: 0, end: Math.min(size, 60) });
+                if (scrollRef.current) scrollRef.current.scrollTop = 0;
+                return;
+            }
             const page = await fetchRangePage(cursor);
             const size = page.messages?.length || 0;
             setMessages(page.messages || []);
@@ -462,6 +711,20 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         setLoading(true);
         setError(null);
         try {
+            if (pagingKind === "cursor") {
+                const out = await fetchConsumePage([]);
+                const size = out.length;
+                setMessages(out);
+                setSelected(size > 0 ? out[0] : null);
+                setPageCursors([[]]);
+                setPageSizes([size]);
+                setPageIdx(0);
+                setCurrentPageStart(0);
+                setNextCursor(size < pageSize ? null : computeCursor(out));
+                setViewport({ start: 0, end: Math.min(size, 60) });
+                if (scrollRef.current) scrollRef.current.scrollTop = 0;
+                return;
+            }
             const page = await fetchRangePage([]);
             const size = page.messages?.length || 0;
             setMessages(page.messages || []);
@@ -473,6 +736,86 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
             if (page.totalCount >= 0) setTotalCount(page.totalCount);
             setNextCursor(page.done ? null : page.cursor);
             setViewport({ start: 0, end: Math.min(size, 60) });
+            if (scrollRef.current) scrollRef.current.scrollTop = 0;
+        } catch (e) {
+            setError(errString(e));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Jumps to an arbitrary page in the current pagination context. For pages
+    // whose cursor we've already captured (the user has visited or walked
+    // past), this is a single fetch. For pages further ahead than we've
+    // walked, it sequentially follows `nextCursor` page-by-page from the
+    // current position — slow for large jumps but works without backend
+    // changes.
+    const handleJumpToPage = async (targetIdx: number) => {
+        if (loading || tailing) return;
+        if (targetIdx < 0 || targetIdx === pageIdx) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const cursorsAcc = pageCursors.slice();
+            const sizesAcc = pageSizes.slice();
+            let walkIdx = pageIdx;
+            let walkCursor = nextCursor;
+            let pageStartAcc = currentPageStart;
+            let lastMessages: kafka.Message[] = messages;
+            let totalCountAcc = totalCount;
+
+            // Backward jump: use the cached cursor if present.
+            if (targetIdx < pageIdx) {
+                const cached = cursorsAcc[targetIdx];
+                if (cached === undefined) throw new Error("missing cached cursor for page " + (targetIdx + 1));
+                if (pagingKind === "cursor") {
+                    lastMessages = await fetchConsumePage(cached);
+                    sizesAcc[targetIdx] = lastMessages.length;
+                    walkCursor = lastMessages.length < pageSize ? null : computeCursor(lastMessages);
+                } else {
+                    const page = await fetchRangePage(cached);
+                    lastMessages = page.messages || [];
+                    sizesAcc[targetIdx] = lastMessages.length;
+                    walkCursor = page.done ? null : page.cursor;
+                    if (page.totalCount >= 0) totalCountAcc = page.totalCount;
+                }
+                walkIdx = targetIdx;
+                pageStartAcc = 0;
+                for (let i = 0; i < targetIdx; i++) pageStartAcc += sizesAcc[i] ?? 0;
+            } else {
+                // Forward walk from the current page using nextCursor.
+                while (walkIdx < targetIdx && walkCursor !== null && walkCursor.length > 0) {
+                    const prevSize = sizesAcc[walkIdx] ?? lastMessages.length;
+                    const cursorForThisStep = walkCursor;
+                    if (pagingKind === "cursor") {
+                        lastMessages = await fetchConsumePage(cursorForThisStep);
+                        walkIdx++;
+                        cursorsAcc[walkIdx] = cursorForThisStep;
+                        sizesAcc[walkIdx] = lastMessages.length;
+                        pageStartAcc += prevSize;
+                        walkCursor = lastMessages.length < pageSize ? null : computeCursor(lastMessages);
+                    } else {
+                        const page = await fetchRangePage(cursorForThisStep);
+                        lastMessages = page.messages || [];
+                        walkIdx++;
+                        cursorsAcc[walkIdx] = cursorForThisStep;
+                        sizesAcc[walkIdx] = lastMessages.length;
+                        pageStartAcc += prevSize;
+                        walkCursor = page.done ? null : page.cursor;
+                        if (page.totalCount >= 0) totalCountAcc = page.totalCount;
+                    }
+                }
+            }
+
+            setMessages(lastMessages);
+            setSelected(lastMessages.length > 0 ? lastMessages[0] : null);
+            setPageCursors(cursorsAcc);
+            setPageSizes(sizesAcc);
+            setPageIdx(walkIdx);
+            setCurrentPageStart(pageStartAcc);
+            setTotalCount(totalCountAcc);
+            setNextCursor(walkCursor);
+            setViewport({ start: 0, end: Math.min(lastMessages.length, 60) });
             if (scrollRef.current) scrollRef.current.scrollTop = 0;
         } catch (e) {
             setError(errString(e));
@@ -589,22 +932,60 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                         />
                     </>
                 )}
-                <input
-                    type="number"
-                    title={t(lang, "consume.max")}
-                    style={{ width: 90 }}
-                    value={maxMessages}
-                    onChange={(e) => setMaxMessages(Number(e.target.value) || 0)}
-                    disabled={mode === "tail"}
-                />
-                <input
-                    type="number"
-                    title={t(lang, "consume.timeout")}
-                    style={{ width: 90 }}
-                    value={timeoutMs}
-                    onChange={(e) => setTimeoutMs(Number(e.target.value) || 0)}
-                    disabled={mode === "tail"}
-                />
+                {mode !== "tail" && (
+                    <>
+                        {mode !== "timestamp" && (
+                            <input
+                                type="number"
+                                title={t(lang, "consume.max")}
+                                // -1 toggles cursor pagination for non-timestamp
+                                // modes; positive values are a single-shot cap.
+                                min={-1}
+                                style={{ width: 90 }}
+                                value={maxMessagesInput}
+                                onChange={(e) => setMaxMessagesInput(e.target.value)}
+                                onBlur={() => {
+                                    const n = normalizeMax(maxMessagesInput, mode);
+                                    setMaxMessages(n);
+                                    setMaxMessagesInput(String(n));
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && topic && !loading && !tailing) {
+                                        e.preventDefault();
+                                        void handleFetch();
+                                    }
+                                }}
+                            />
+                        )}
+                        {pagingKind !== null && (
+                            <select
+                                title={t(lang, "consume.pageSize")}
+                                style={{ width: 110 }}
+                                value={pageSize}
+                                onChange={(e) => setPageSize(Number(e.target.value) as PageSize)}
+                            >
+                                {PAGE_SIZES.map((s) => (
+                                    <option key={s} value={s}>
+                                        {t(lang, "consume.pageSize.option", { n: s.toLocaleString() })}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
+                        <input
+                            type="number"
+                            title={t(lang, "consume.timeout")}
+                            style={{ width: 90 }}
+                            value={timeoutMs}
+                            onChange={(e) => setTimeoutMs(Number(e.target.value) || 0)}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" && topic && !loading && !tailing) {
+                                    e.preventDefault();
+                                    void handleFetch();
+                                }
+                            }}
+                        />
+                    </>
+                )}
                 <button
                     className={loading || tailing ? "danger" : "primary"}
                     onClick={loading || tailing ? () => { void CancelConsume(profileId); } : handleFetch}
@@ -619,7 +1000,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                 <span className="count-pill">
                     {t(lang, "consume.shownOf", { shown: filtered.length, total: messages.length })}
                 </span>
-                {mode === "timestamp" && pageCursors.length > 0 && (
+                {pagingKind !== null && pageCursors.length > 0 && (
                     <>
                         <button onClick={handleFirstPage} disabled={pageIdx === 0 || loading}>
                             {t(lang, "consume.page.first")}
@@ -627,20 +1008,46 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                         <button onClick={handlePrevPage} disabled={pageIdx === 0 || loading}>
                             {t(lang, "consume.page.prev")}
                         </button>
-                        <span className="count-pill">
-                            {totalPages !== null
-                                ? t(lang, "consume.page.labelOf", { n: pageIdx + 1, total: totalPages })
-                                : t(lang, "consume.page.label", { n: pageIdx + 1 })}
-                        </span>
+                        {(() => {
+                            // Build the page-jump dropdown. We render at most
+                            // max(known, total) options; for cursor mode the
+                            // upper bound grows with what we've walked
+                            // (+1 if there's a next page to walk into).
+                            const visited = pageCursors.length;
+                            const upper = totalPages !== null
+                                ? totalPages
+                                : Math.max(visited, pageIdx + 1) + (nextCursor ? 1 : 0);
+                            const opts: number[] = [];
+                            for (let i = 0; i < upper; i++) opts.push(i);
+                            return (
+                                <select
+                                    className="page-jump"
+                                    value={pageIdx}
+                                    onChange={(e) => void handleJumpToPage(Number(e.target.value))}
+                                    disabled={loading}
+                                    title={t(lang, "consume.page.jump")}
+                                >
+                                    {opts.map((i) => (
+                                        <option key={i} value={i}>
+                                            {totalPages !== null
+                                                ? t(lang, "consume.page.labelOf", { n: i + 1, total: totalPages })
+                                                : t(lang, "consume.page.label", { n: i + 1 })}
+                                        </option>
+                                    ))}
+                                </select>
+                            );
+                        })()}
                         <button onClick={handleNextPage} disabled={!nextCursor || loading}>
                             {t(lang, "consume.page.next")}
                         </button>
-                        <button
-                            onClick={handleLastPage}
-                            disabled={loading || (totalPages !== null && pageIdx === totalPages - 1)}
-                        >
-                            {t(lang, "consume.page.last")}
-                        </button>
+                        {pagingKind === "timestamp" && (
+                            <button
+                                onClick={handleLastPage}
+                                disabled={loading || (totalPages !== null && pageIdx === totalPages - 1)}
+                            >
+                                {t(lang, "consume.page.last")}
+                            </button>
+                        )}
                         {totalCount !== null && (
                             <span className="muted" style={{ fontSize: 11 }}>
                                 {t(lang, "consume.page.totalCount", { n: totalCount.toLocaleString() })}
@@ -693,13 +1100,10 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                     key={card.id}
                                     tokens={card.tokens}
                                     count={cardCounts[i] ?? 0}
+                                    color={CARD_COLORS[i] ?? null}
                                     lang={lang}
                                     onClick={() => setEditingCardId(card.id)}
-                                    onDelete={
-                                        searchCards.length > 1
-                                            ? () => setSearchCards((prev) => prev.filter((c) => c.id !== card.id))
-                                            : undefined
-                                    }
+                                    onDelete={() => setSearchCards((prev) => prev.filter((c) => c.id !== card.id))}
                                 />
                             ))}
                             {searchCards.length < 5 && (
@@ -773,6 +1177,8 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                             textOverflow: "ellipsis",
                                             whiteSpace: "nowrap",
                                         };
+                                        // Selection wins over card tint so the user can still see which row is selected.
+                                        const cc = isSel ? null : cardColorOf(m);
                                         return (
                                             <tr
                                                 key={key}
@@ -783,7 +1189,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                                     setSelected(m);
                                                     setRowCtxMenu({ x: e.clientX, y: e.clientY, message: m });
                                                 }}
-                                                style={{ height: ROW_HEIGHT }}
+                                                style={{ height: ROW_HEIGHT, background: cc?.rowBg }}
                                             >
                                                 <td className="mono muted" style={cellStyle}>{currentPageStart + viewport.start + i + 1}</td>
                                                 <td style={cellStyle}>{m.partition}</td>
@@ -920,12 +1326,14 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
 function SearchCardChip({
     tokens,
     count,
+    color,
     lang,
     onClick,
     onDelete,
 }: {
     tokens: string[];
     count: number;
+    color: CardColor;
     lang: Lang;
     onClick: () => void;
     onDelete?: () => void;
@@ -941,8 +1349,8 @@ function SearchCardChip({
                 alignItems: "center",
                 gap: 8,
                 padding: "4px 8px 4px 10px",
-                background: "var(--panel-2)",
-                border: "1px solid var(--border)",
+                background: color?.chipBg ?? "var(--panel-2)",
+                border: `1px solid ${color?.chipBorder ?? "var(--border)"}`,
                 borderRadius: 14,
                 cursor: "pointer",
                 fontSize: 12,
@@ -963,7 +1371,9 @@ function SearchCardChip({
             </span>
             <span
                 style={{
-                    color: empty ? "var(--text-dim)" : "var(--accent)",
+                    color: empty
+                        ? "var(--text-dim)"
+                        : color?.chipFg ?? "var(--accent)",
                     fontWeight: 600,
                     fontVariantNumeric: "tabular-nums",
                 }}

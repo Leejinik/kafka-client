@@ -24,13 +24,20 @@ const (
 )
 
 // ConsumeOptions controls a single fetch operation.
+//
+// Cursor, when non-empty, lets the FE paginate non-timestamp fetches. It
+// supplies per-partition continuation offsets; the Mode field still determines
+// the direction (forward for beginning/offsetAfter, backward for
+// end/offsetBefore). When Cursor is set the SeekEnd tail-forever behaviour is
+// also disabled so the call returns a finite page just like SeekOffsetBefore.
 type ConsumeOptions struct {
-	Topic       string   `json:"topic"`
-	Mode        SeekMode `json:"mode"`
-	Offset      int64    `json:"offset,omitempty"`
-	TimestampMs int64    `json:"timestampMs,omitempty"`
-	MaxMessages int      `json:"maxMessages"`
-	TimeoutMs   int      `json:"timeoutMs"`
+	Topic       string        `json:"topic"`
+	Mode        SeekMode      `json:"mode"`
+	Offset      int64         `json:"offset,omitempty"`
+	TimestampMs int64         `json:"timestampMs,omitempty"`
+	MaxMessages int           `json:"maxMessages"`
+	TimeoutMs   int           `json:"timeoutMs"`
+	Cursor      []CursorEntry `json:"cursor,omitempty"`
 }
 
 // Message is a decoded representation passed to the UI.
@@ -58,6 +65,9 @@ func (m *Manager) Consume(ctx context.Context, profileID string, opts ConsumeOpt
 	if opts.Topic == "" {
 		return nil, errors.New("topic is required")
 	}
+	// Non-positive max → default 1000. The FE treats "-1" as "paginate"
+	// internally and always sends a real positive page size here, so the
+	// backend never has to deal with an unlimited fetch.
 	if opts.MaxMessages <= 0 {
 		opts.MaxMessages = 1000
 	}
@@ -185,6 +195,47 @@ func (m *Manager) Consume(ctx context.Context, profileID string, opts ConsumeOpt
 		return nil, fmt.Errorf("unknown seek mode %q", opts.Mode)
 	}
 
+	// Cursor pagination override. When the FE supplies a per-partition cursor
+	// we ignore the mode-based starting offsets above and resume from the
+	// cursor instead. The mode still selects direction:
+	//   - forward (beginning, offsetAfter, "")  : start exactly at cursor[p]
+	//   - backward (end, offsetBefore)          : cursor[p] is the upper bound;
+	//     start at cursor[p] - (perPart-1) and clip the polling loop with a
+	//     per-partition stop at cursor[p] (applied below where stopAt is set).
+	cursorByPart := map[int32]int64{}
+	for _, c := range opts.Cursor {
+		cursorByPart[c.Partition] = c.Offset
+	}
+	hasCursor := len(cursorByPart) > 0
+	isBackwardMode := opts.Mode == SeekEnd || opts.Mode == SeekOffsetBefore
+	if hasCursor {
+		if isBackwardMode {
+			nPart := int64(len(td.Partitions))
+			if nPart == 0 {
+				nPart = 1
+			}
+			perPart := int64(opts.MaxMessages) / nPart
+			if perPart < 1 {
+				perPart = 1
+			}
+			for pid, upper := range cursorByPart {
+				s := startMap[pid]
+				from := upper - (perPart - 1)
+				if from < s.At {
+					from = s.At
+				}
+				if from < 0 {
+					from = 0
+				}
+				startOffsets[pid] = kgo.NewOffset().At(from)
+			}
+		} else {
+			for pid, lower := range cursorByPart {
+				startOffsets[pid] = kgo.NewOffset().At(lower)
+			}
+		}
+	}
+
 	// Build a transient consumer client. We do NOT reuse the manager's
 	// client because that one is configured for admin/produce traffic and
 	// does not have ConsumePartitions set; mixing roles complicates
@@ -220,6 +271,13 @@ func (m *Manager) Consume(ctx context.Context, profileID string, opts ConsumeOpt
 			}
 		}
 	}
+	if hasCursor && isBackwardMode {
+		for pid, upper := range cursorByPart {
+			if upper < stopAt[pid] {
+				stopAt[pid] = upper
+			}
+		}
+	}
 
 	out := make([]Message, 0, opts.MaxMessages)
 	delivered := map[int32]int64{}
@@ -252,9 +310,10 @@ func (m *Manager) Consume(ctx context.Context, profileID string, opts ConsumeOpt
 				delivered[r.Partition] = r.Offset
 			}
 		})
-		if opts.Mode == SeekEnd {
+		if opts.Mode == SeekEnd && !hasCursor {
 			// In tail mode we keep polling for new records until the
-			// deadline, regardless of how many we already have.
+			// deadline, regardless of how many we already have. Cursor
+			// pagination of SeekEnd is finite though — break via allDrained.
 			continue
 		}
 		// For finite modes, stop once every partition has been drained up
