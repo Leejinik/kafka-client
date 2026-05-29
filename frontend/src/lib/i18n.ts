@@ -264,6 +264,16 @@ const ko: Dict = {
     "status.no_profile": "선택된 클러스터가 없습니다",
     "status.connect_required": "먼저 클러스터에 연결하세요",
     "error.generic": "오류가 발생했습니다",
+    "update.prompt.title": "업데이트가 있습니다",
+    "update.prompt.body": "새 버전 {latest}이(가) 공개되었습니다 (현재 {current}). 지금 업데이트할까요?",
+    "update.prompt.yes": "업데이트",
+    "update.prompt.no": "나중에",
+    "update.applying.title": "업데이트 적용 중…",
+    "update.applying.body": "새 버전을 내려받고 있습니다. 완료되면 앱이 자동으로 재시작됩니다.",
+    "update.failed": "업데이트 실패: {err}",
+    "update.notes.title": "릴리즈 노트 — {version}",
+    "update.notes.close": "확인",
+    "update.notes.empty": "(릴리즈 노트가 비어 있습니다)",
 };
 
 const en: Dict = {
@@ -530,6 +540,16 @@ const en: Dict = {
     "status.no_profile": "No cluster selected",
     "status.connect_required": "Connect to the cluster first",
     "error.generic": "Something went wrong",
+    "update.prompt.title": "Update available",
+    "update.prompt.body": "A new version {latest} is available (current: {current}). Update now?",
+    "update.prompt.yes": "Update",
+    "update.prompt.no": "Later",
+    "update.applying.title": "Applying update…",
+    "update.applying.body": "Downloading the new version. The app will restart automatically when ready.",
+    "update.failed": "Update failed: {err}",
+    "update.notes.title": "Release notes — {version}",
+    "update.notes.close": "OK",
+    "update.notes.empty": "(no release notes)",
 };
 
 export type Lang = "ko" | "en";

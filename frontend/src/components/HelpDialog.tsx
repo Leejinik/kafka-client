@@ -390,6 +390,25 @@ function buildSectionsKo(): Section[] {
                 </>
             ),
         },
+        {
+            id: "update",
+            title: "10. 자동 업데이트",
+            body: (
+                <>
+                    <p>앱을 켤 때마다 GitHub Releases를 확인해 새 버전이 있으면 "업데이트가 있습니다" 다이얼로그가 뜹니다.</p>
+                    <ul>
+                        <li><b>업데이트</b> — 새 <M>kafka-client.exe</M>를 같은 폴더에 받아 두고, 작은 <M>update.cmd</M> 헬퍼가 앱이 종료된 직후 파일을 교체한 뒤 자동으로 다시 실행합니다.</li>
+                        <li><b>나중에</b> — 그냥 현재 버전으로 계속 사용. 다음 실행 때 다시 묻습니다.</li>
+                        <li>업데이트 직후 처음 켜질 때 <b>릴리즈 노트</b>가 한 번만 팝업됩니다 (확인을 누르면 두 번째부터는 안 뜸).</li>
+                    </ul>
+                    <p><b>릴리즈는 태그 기반</b>입니다. <M>git tag vX.Y.Z && git push --tags</M>를 푸쉬하면 GitHub Actions가 Windows에서 <M>wails build</M>로 exe를 만들고, 이전 태그 이후의 커밋 메시지를 Release 본문에 자동으로 채워서 공개합니다.</p>
+                    <Box kind="tip">
+                        로컬에서 <M>wails build</M>만 돌리면 버전은 <M>dev</M>로 박혀 업데이트 알림이 뜨지 않습니다 — 평소 개발 빌드는 방해받지 않고 쓸 수 있어요.
+                    </Box>
+                    <p>설정 파일: <M>~/.kafka-client/pending-release-notes.json</M> (다음 실행 때 보여줄 릴리즈 노트 저장소, 확인 후 자동 삭제).</p>
+                </>
+            ),
+        },
     ];
 }
 
@@ -656,6 +675,25 @@ function buildSectionsEn(): Section[] {
                     <p><b>Config folder</b> — shows where profiles are stored (<M>~/.kafka-client</M>). Read-only display.</p>
                     <p><b>Export / Import profiles</b> — dump or load all registered clusters as a JSON file. Imports refresh the sidebar automatically.</p>
                     <p><b>About</b> — current build version and core libraries.</p>
+                </>
+            ),
+        },
+        {
+            id: "update",
+            title: "10. Auto-update",
+            body: (
+                <>
+                    <p>On every launch the app checks GitHub Releases for a newer version. If one exists you get an "Update available" prompt.</p>
+                    <ul>
+                        <li><b>Update</b> — downloads the new <M>kafka-client.exe</M> next to the current one. A tiny <M>update.cmd</M> helper waits for the app to exit, swaps the file, and re-launches it.</li>
+                        <li><b>Later</b> — keep the current build; you'll be asked again next launch.</li>
+                        <li>The first time the freshly-updated binary runs, the <b>release notes</b> pop up once and only once (clicking OK dismisses them for good).</li>
+                    </ul>
+                    <p><b>Releases are tag-driven.</b> Push <M>git tag vX.Y.Z && git push --tags</M> and GitHub Actions builds the exe on Windows via <M>wails build</M>, auto-fills the release body from commit messages since the previous tag, and publishes.</p>
+                    <Box kind="tip">
+                        A local <M>wails build</M> without ldflags stamps the version as <M>dev</M> and silently disables the update prompt — your dev builds stay undisturbed.
+                    </Box>
+                    <p>State file: <M>~/.kafka-client/pending-release-notes.json</M> (holds notes to show on next launch; deleted after the user dismisses).</p>
                 </>
             ),
         },

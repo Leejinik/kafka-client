@@ -9,6 +9,7 @@ import (
 
 	"kafka-client/internal/kafka"
 	"kafka-client/internal/profile"
+	"kafka-client/internal/updater"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -19,6 +20,11 @@ type App struct {
 	ctx      context.Context
 	profiles *profile.Store
 	manager  *kafka.Manager
+	updater  *updater.Updater
+
+	// version is set from main() after NewApp(); the updater is built lazily on
+	// startup once we know the value.
+	version string
 
 	// In-flight Consume() cancel functions, keyed by profileID. The UI is
 	// single-fetch per profile so we keep at most one entry per id.
@@ -46,6 +52,14 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	if a.version == "" {
+		a.version = "dev"
+	}
+	configDir := ""
+	if a.profiles != nil {
+		configDir = a.profiles.Dir()
+	}
+	a.updater = updater.New(a.version, configDir)
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -301,4 +315,64 @@ func (a *App) StopLoopProduce(profileID string) {
 
 func (a *App) GetLoopProduceStatus(profileID string) kafka.LoopProduceStatus {
 	return a.manager.GetLoopProduceStatus(profileID)
+}
+
+// --- Auto-update --------------------------------------------------------
+
+// GetCurrentVersion returns the build-time version (or "dev" for local builds).
+func (a *App) GetCurrentVersion() string {
+	if a.updater == nil {
+		return a.version
+	}
+	return a.updater.CurrentVersion()
+}
+
+// CheckForUpdate queries GitHub Releases for a newer build.
+func (a *App) CheckForUpdate() (updater.UpdateInfo, error) {
+	if a.updater == nil {
+		return updater.UpdateInfo{CurrentVersion: a.version}, nil
+	}
+	return a.updater.Check(a.ctx)
+}
+
+// ApplyUpdate downloads the new exe, stashes the release notes, spawns the
+// swap helper, and quits the app — the helper finishes the swap and re-opens
+// the (new) binary, which will then show the release notes once on startup.
+func (a *App) ApplyUpdate(info updater.UpdateInfo) error {
+	if a.updater == nil {
+		return errors.New("updater not initialised")
+	}
+	if err := a.updater.Apply(a.ctx, info); err != nil {
+		return err
+	}
+	// Hand off to the helper. Quit in a goroutine so this call can return
+	// cleanly to the frontend before the runtime shuts down.
+	go func() {
+		// Give the frontend a beat to dismiss its dialog.
+		wailsruntime.Quit(a.ctx)
+	}()
+	return nil
+}
+
+// GetPendingReleaseNotes returns release notes stashed by the previous
+// version right before it triggered the update, iff they belong to the
+// current binary version. Returns nil when there's nothing to show. Used to
+// pop release notes exactly once after an auto-update.
+func (a *App) GetPendingReleaseNotes() *updater.PendingNotes {
+	if a.updater == nil {
+		return nil
+	}
+	notes, ok, _ := a.updater.LoadPendingNotes()
+	if !ok {
+		return nil
+	}
+	return &notes
+}
+
+// MarkReleaseNotesSeen deletes the stashed notes file so it won't pop again.
+func (a *App) MarkReleaseNotesSeen() error {
+	if a.updater == nil {
+		return nil
+	}
+	return a.updater.ClearPendingNotes()
 }

@@ -10,12 +10,17 @@ import {
     GetClusterInfo,
     IsConnected,
     ListProfiles,
+    CheckForUpdate,
+    GetPendingReleaseNotes,
+    MarkReleaseNotesSeen,
 } from "../wailsjs/go/main/App";
-import { kafka } from "../wailsjs/go/models";
+import { kafka, updater } from "../wailsjs/go/models";
 import { ContextMenu, ContextMenuItem } from "./components/ContextMenu";
 import { VerticalSplitter, useResizableWidth } from "./components/ResizableColumns";
 import { ProfileDialog } from "./components/ProfileDialog";
 import { HelpDialog } from "./components/HelpDialog";
+import { UpdatePromptDialog } from "./components/UpdatePromptDialog";
+import { ReleaseNotesDialog } from "./components/ReleaseNotesDialog";
 import { TopicsPage } from "./pages/TopicsPage";
 import { ConsumePage } from "./pages/ConsumePage";
 import { ProducePage } from "./pages/ProducePage";
@@ -87,6 +92,12 @@ export default function App() {
     const [sidebarCtx, setSidebarCtx] = useState<{ x: number; y: number; profile: profile.Profile } | null>(null);
     const [helpOpen, setHelpOpen] = useState(false);
 
+    // Auto-update flow. updateInfo is set after a check fires on startup;
+    // releaseNotes is set on startup if the previous version stashed notes for
+    // us to show exactly once.
+    const [updateInfo, setUpdateInfo] = useState<updater.UpdateInfo | null>(null);
+    const [releaseNotes, setReleaseNotes] = useState<{ version: string; notes: string } | null>(null);
+
     // Sidebar width — drag the splitter at its right edge to resize.
     const sidebar = useResizableWidth("kfc.sidebar.width", 260);
 
@@ -108,6 +119,39 @@ export default function App() {
     }, [selectedId]);
 
     useEffect(() => { void refreshProfiles(); }, []);
+
+    // Startup: show release notes from the previous update (if any), then
+    // check GitHub for a newer release and prompt.
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const notes = await GetPendingReleaseNotes();
+                if (!cancelled && notes && notes.version) {
+                    setReleaseNotes({ version: notes.version, notes: notes.notes ?? "" });
+                }
+            } catch {
+                // Non-fatal — skip the notes popup.
+            }
+            try {
+                const info = await CheckForUpdate();
+                if (!cancelled && info?.available) {
+                    setUpdateInfo(info);
+                }
+            } catch {
+                // Network error / API hiccup — silently skip; the user can
+                // upgrade manually next time.
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    const dismissReleaseNotes = useCallback(() => {
+        setReleaseNotes(null);
+        void MarkReleaseNotesSeen();
+    }, []);
 
     // Reset the shared topic when the selected profile changes — topic names
     // are not cross-profile valid.
@@ -361,6 +405,26 @@ export default function App() {
             )}
 
             {helpOpen && <HelpDialog lang={lang} onClose={() => setHelpOpen(false)} />}
+
+            {/* Release notes from the previous version's update — show once,
+                then mark seen so the file is cleared. Render before the
+                update prompt so notes for *this* version come first. */}
+            {releaseNotes && (
+                <ReleaseNotesDialog
+                    lang={lang}
+                    version={releaseNotes.version}
+                    notes={releaseNotes.notes}
+                    onClose={dismissReleaseNotes}
+                />
+            )}
+
+            {updateInfo && !releaseNotes && (
+                <UpdatePromptDialog
+                    lang={lang}
+                    info={updateInfo}
+                    onClose={() => setUpdateInfo(null)}
+                />
+            )}
 
             {toast && <div className="toast">{toast}</div>}
         </div>

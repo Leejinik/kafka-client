@@ -11,9 +11,15 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// Version is injected at build time via -ldflags "-X main.Version=v1.2.3".
+// Local `wails build` without ldflags leaves this as "dev", which the updater
+// treats as "do not nag for updates".
+var Version = "dev"
+
 func main() {
 	// Create an instance of the app structure
 	app := NewApp()
+	app.version = Version
 
 	// Create application with options
 	err := wails.Run(&options.App{
