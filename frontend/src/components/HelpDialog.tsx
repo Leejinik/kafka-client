@@ -140,7 +140,8 @@ function buildSectionsKo(): Section[] {
                     </ul>
                     <p><b>상단바(topbar)</b> — 현재 선택된 클러스터 이름 + <M>(controller: B<i>n</i>)</M> 표시 (연결되어 있을 때만). 우측 <M>연결</M> / <M>연결 끊기</M> 버튼.</p>
                     <p><b>탭</b> — 토픽 / 조회 / 발행 / 설정. 연결되지 않은 상태에서는 설정 외 탭은 잠깁니다.</p>
-                    <p><b>토픽 상태 공유</b> — 조회와 발행 탭은 같은 선택 토픽을 공유합니다. 한쪽에서 토픽을 바꾸면 다른 쪽도 따라옵니다 (단, 다른 클러스터로 전환하면 초기화).</p>
+                    <p><b>탭 상태 유지</b> — 탭을 옮겨도 각 탭의 상태가 그대로 보존됩니다. 조회 탭에 걸어둔 <M>tail -f</M>는 다른 탭에 있는 동안에도 계속 돌면서 메시지를 모으고, 조회 결과·검색·페이지 위치, 발행 폼의 키/값/헤더도 그대로 남아 있습니다. 예: 조회에서 tail 켜고 → 발행에서 메시지 보낸 뒤 → 조회로 돌아오면 그 사이 들어온 메시지까지 이어서 보입니다. (다른 클러스터로 전환하면 초기화. 토픽 탭은 숨겨진 동안 폴링을 멈췄다가 돌아오면 재개합니다.)</p>
+                    <p><b>토픽 상태 공유</b> — 조회와 발행 탭은 같은 선택 토픽을 공유합니다. 한쪽에서 토픽을 바꾸면 다른 쪽도 따라옵니다 (단, 다른 클러스터로 전환하면 초기화). 조회 탭에서 tail이 도는 중에는 발행 쪽에서 토픽을 바꿔도 진행 중인 tail은 끊기지 않습니다.</p>
                 </>
             ),
         },
@@ -428,7 +429,8 @@ function buildSectionsEn(): Section[] {
                     </ul>
                     <p><b>Top bar</b> — current cluster name + <M>(controller: B<i>n</i>)</M> when connected; right-side <M>Connect</M> / <M>Disconnect</M>.</p>
                     <p><b>Tabs</b> — Topics / Consume / Produce / Settings. Non-Settings tabs are locked until you connect.</p>
-                    <p><b>Shared topic state</b> — Consume and Produce share the selected topic. Switching the topic on one auto-updates the other (cleared when you switch clusters).</p>
+                    <p><b>Tab state is preserved</b> — switching tabs no longer resets anything. A <M>tail -f</M> started on the Consume tab keeps running and collecting messages while you're on another tab, and the fetched rows / search / page position plus the Produce form (key, value, headers) all stay put. So: start a tail on Consume → publish from Produce → come back to Consume and you'll see the messages that arrived in the meantime, continued in place. (Cleared when you switch clusters. The Topics tab pauses its polling while hidden and resumes on return.)</p>
+                    <p><b>Shared topic state</b> — Consume and Produce share the selected topic. Switching the topic on one auto-updates the other (cleared when you switch clusters). While a tail is running on Consume, changing the topic from Produce won't interrupt the live tail.</p>
                 </>
             ),
         },

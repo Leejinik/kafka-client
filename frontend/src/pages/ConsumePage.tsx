@@ -215,8 +215,15 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     }, [profileId]);
 
     // Auto-start tail the moment the user picks the tail mode.
+    //
+    // The `tailing` guard keeps a live tail bound to the topic it started on:
+    // because the Consume and Produce pages now stay mounted together and share
+    // the selected topic, changing the topic on the Produce tab must NOT
+    // silently clobber a running tail over here. A new tail only starts when
+    // the user explicitly (re)selects the tail mode.
     useEffect(() => {
         if (mode !== "tail" || !topic || !profileId) return;
+        if (tailing) return;
         let cancelled = false;
         setMessages([]);
         setSelected(null);
@@ -231,7 +238,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         return () => {
             cancelled = true;
         };
-    }, [mode, topic, profileId]);
+    }, [mode, topic, profileId, tailing]);
 
     // Pin to bottom whenever the message list grows while following.
     useEffect(() => {

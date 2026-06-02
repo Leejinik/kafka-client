@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import "./App.css";
 import { Lang, t } from "./lib/i18n";
 import { errString } from "./lib/errors";
@@ -35,6 +35,25 @@ import onionLogoWhite from "./assets/onion/logo-white.png";
 import onionLogoOrange from "./assets/onion/logo-orange.png";
 
 type ResolvedTheme = "light" | "dark" | "onion" | "dark-onion";
+
+// Wraps a tab's page so it can be hidden without unmounting. Keeping the page
+// mounted is what preserves its internal state (tail -f stream, fetched
+// messages, produce form) when the user switches tabs and comes back. When
+// active it fills the content area like a normal flex child; when hidden it's
+// display:none so it occupies no space and triggers no layout.
+function TabPanel({ active, children }: { active: boolean; children: ReactNode }) {
+    return (
+        <div
+            style={
+                active
+                    ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }
+                    : { display: "none" }
+            }
+        >
+            {children}
+        </div>
+    );
+}
 
 function resolveTheme(pref: ThemePref): ResolvedTheme {
     if (pref === "system") {
@@ -345,7 +364,8 @@ export default function App() {
                 </nav>
 
                 <div className="content">
-                    {tab === "settings" ? (
+                    {/* Settings is usable without a connected profile. */}
+                    {tab === "settings" && (
                         <SettingsPage
                             lang={lang}
                             setLang={setLang}
@@ -353,33 +373,52 @@ export default function App() {
                             setThemePref={setThemePref}
                             onProfilesChanged={refreshProfiles}
                         />
-                    ) : !selected || !connected ? (
+                    )}
+
+                    {/* The three data pages need a connected profile. Once
+                        mounted they stay mounted across tab switches (hidden,
+                        not unmounted) so a running tail -f, the fetched
+                        messages, and the produce form all survive flipping
+                        between tabs. They're keyed by profile id so switching
+                        profiles starts fresh. Settings renders alongside them
+                        — being on Settings doesn't tear the tail down. */}
+                    {tab !== "settings" && (!selected || !connected) ? (
                         <div className="placeholder muted">
                             {!selected ? t(lang, "status.no_profile") : t(lang, "status.connect_required")}
                         </div>
-                    ) : tab === "topics" ? (
-                        <TopicsPage
-                            lang={lang}
-                            profileId={selected.id}
-                            onTick={() => void fetchClusterInfo(selected.id)}
-                        />
-                    ) : tab === "consume" ? (
-                        <ConsumePage
-                            lang={lang}
-                            profileId={selected.id}
-                            defaultTopic={selected.defaultTopic}
-                            topic={sharedTopic}
-                            onTopicChange={setSharedTopic}
-                        />
-                    ) : (
-                        <ProducePage
-                            lang={lang}
-                            profileId={selected.id}
-                            defaultTopic={selected.defaultTopic}
-                            topic={sharedTopic}
-                            onTopicChange={setSharedTopic}
-                        />
-                    )}
+                    ) : selected && connected ? (
+                        <>
+                            <TabPanel active={tab === "topics"}>
+                                <TopicsPage
+                                    key={selected.id}
+                                    lang={lang}
+                                    profileId={selected.id}
+                                    active={tab === "topics"}
+                                    onTick={() => void fetchClusterInfo(selected.id)}
+                                />
+                            </TabPanel>
+                            <TabPanel active={tab === "consume"}>
+                                <ConsumePage
+                                    key={selected.id}
+                                    lang={lang}
+                                    profileId={selected.id}
+                                    defaultTopic={selected.defaultTopic}
+                                    topic={sharedTopic}
+                                    onTopicChange={setSharedTopic}
+                                />
+                            </TabPanel>
+                            <TabPanel active={tab === "produce"}>
+                                <ProducePage
+                                    key={selected.id}
+                                    lang={lang}
+                                    profileId={selected.id}
+                                    defaultTopic={selected.defaultTopic}
+                                    topic={sharedTopic}
+                                    onTopicChange={setSharedTopic}
+                                />
+                            </TabPanel>
+                        </>
+                    ) : null}
                 </div>
             </main>
 

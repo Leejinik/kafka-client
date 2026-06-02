@@ -20,6 +20,11 @@ import { GroupResetOffsetsDialog } from "../components/GroupResetOffsetsDialog";
 interface Props {
     lang: Lang;
     profileId: string;
+    // false while the Topics tab is hidden behind another tab. The page stays
+    // mounted (so expanded rows / scroll survive a tab switch) but its polling
+    // intervals are torn down so we don't keep hammering the broker in the
+    // background.
+    active?: boolean;
     onTick?: () => void; // fired every 10s; parent can refresh cluster-level data
 }
 
@@ -117,7 +122,7 @@ type Dialog =
     | { kind: "groupDelete"; group: string }
     | { kind: "groupReset"; group: kafka.GroupView; topic: string };
 
-export function TopicsPage({ lang, profileId, onTick }: Props) {
+export function TopicsPage({ lang, profileId, active = true, onTick }: Props) {
     const [topics, setTopics] = useState<kafka.TopicSummary[]>([]);
     const [search, setSearch] = useState("");
     const [loading, setLoading] = useState(false);
@@ -206,6 +211,9 @@ export function TopicsPage({ lang, profileId, onTick }: Props) {
     useEffect(() => { onTickRef.current = onTick; }, [onTick]);
 
     useEffect(() => {
+        // Paused while the tab is hidden — re-created (with current state intact)
+        // when the user returns to the Topics tab.
+        if (!active) return;
         let cancelled = false;
         let fastRunning = false;
         let slowRunning = false;
@@ -284,7 +292,7 @@ export function TopicsPage({ lang, profileId, onTick }: Props) {
             window.clearInterval(fastId);
             window.clearInterval(slowId);
         };
-    }, [profileId]);
+    }, [profileId, active]);
 
     const toggleExpand = (topic: string) => {
         const next = new Set(expanded);
