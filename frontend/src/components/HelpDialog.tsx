@@ -243,7 +243,7 @@ function buildSectionsKo(): Section[] {
                         <li>고급 검색은 현재 페이지 안에서만 동작 — 더 넓게 검색하려면 50000으로 키워서 한 번에 더 많이 받기</li>
                         <li>선택값은 localStorage에 저장. 이미 결과를 띄워둔 상태에서 단위를 바꾸면 1페이지로 <b>자동 재조회</b>됨</li>
                     </ul>
-                    <p>모드: <b>처음부터 / 끝에서 / 오프셋 이후 / 오프셋 이전 / 타임스탬프 범위 / tail -f</b>.</p>
+                    <p>모드: <b>Oldest / Newest / 오프셋 이후 / 오프셋 이전 / 타임스탬프 범위 / tail -f</b>.</p>
                     <ul>
                         <li><b>오프셋 이후</b> — 입력한 오프셋부터 (포함) 그 이후로 limit개. 입력값이 그리드 첫 행에 노출됨</li>
                         <li><b>오프셋 이전</b> — 입력한 오프셋까지 (포함) 그 이전으로 limit개. 입력값은 그리드 마지막 행에 위치 (Kafka는 항상 offset 오름차순 반환). Offset 컬럼을 ▼ 정렬하면 입력값이 row 1로 옴</li>
@@ -267,7 +267,7 @@ function buildSectionsKo(): Section[] {
                     <p><b>tail -f (실시간)</b> — 토픽의 현재 끝부터 새로 들어오는 메시지를 스트리밍.</p>
                     <ul>
                         <li>모드 선택 즉시 시작, limit / timeout 무시. 가져오기 버튼이 <b>중지</b>로 토글</li>
-                        <li>중지 누르면 모드/limit/timeout이 기본값(끝에서/1000/8000)으로 복원, 수신된 메시지는 그대로 유지</li>
+                        <li>중지 누르면 모드/limit/timeout이 기본값(Newest/1000/8000)으로 복원, 수신된 메시지는 그대로 유지</li>
                         <li><b>자동 스크롤</b> (follow): 새 메시지가 도착할 때마다 그리드 맨 아래를 따라감</li>
                         <li><b>마우스 휠</b> → follow 해제, 그 자리에 멈춤</li>
                         <li><b>Shift + G</b> → 다시 맨 아래로 점프 + follow 재개</li>
@@ -523,7 +523,7 @@ function buildSectionsEn(): Section[] {
                     <p><b>Max messages input rules</b>:</p>
                     <ul>
                         <li><b>Empty / 0</b> → auto-replaced with <M>1000</M> (default) on fetch or blur</li>
-                        <li><b>-1</b> = <b>cursor pagination</b> (allowed only in Beginning / End / Offset modes). After the first Fetch, <M>« First</M> / <M>← Prev</M> / <M>Next →</M> buttons appear above the grid; click Next until a page returns fewer rows than the page size (= log boundary). Direction follows the mode — End / Offset (before) walks toward older records, Beginning / Offset (after) walks toward newer ones</li>
+                        <li><b>-1</b> = <b>cursor pagination</b> (allowed only in Oldest / Newest / Offset modes). After the first Fetch, <M>« First</M> / <M>← Prev</M> / <M>Next →</M> buttons appear above the grid; click Next until a page returns fewer rows than the page size (= log boundary). Direction follows the mode — Newest / Offset (before) walks toward older records, Oldest / Offset (after) walks toward newer ones</li>
                         <li><b>Enter</b> while focused on Max messages / Timeout fires <M>Fetch</M> (same as clicking the button)</li>
                     </ul>
                     <p><b>Page size</b> dropdown — <M>1000</M> / <M>10000</M> / <M>50000</M>:</p>
@@ -532,7 +532,7 @@ function buildSectionsEn(): Section[] {
                         <li>Advanced search works only within the current page — pick 50000 to scan a bigger window in one shot</li>
                         <li>Persisted in localStorage. Changing it while a result is on screen <b>auto-refetches</b> page 1 with the new size</li>
                     </ul>
-                    <p>Modes: <b>Beginning / End / Offset (after) / Offset (before) / Timestamp range / tail -f</b>.</p>
+                    <p>Modes: <b>Oldest / Newest / Offset (after) / Offset (before) / Timestamp range / tail -f</b>.</p>
                     <ul>
                         <li><b>Offset (after)</b> — from the given offset inclusive, forward, up to limit. The input value shows up as row 1</li>
                         <li><b>Offset (before)</b> — up to the given offset inclusive, backward, up to limit. Since Kafka always returns records in ascending offset order, the input value ends up as the last row. Click the Offset header ▼ to bring it to row 1</li>
@@ -556,7 +556,7 @@ function buildSectionsEn(): Section[] {
                     <p><b>tail -f (live)</b> — streams new records from the topic's current end.</p>
                     <ul>
                         <li>Starts the instant the mode is selected; limit / timeout are ignored. The Fetch button toggles to <b>Stop</b></li>
-                        <li>Stop restores mode/limit/timeout to defaults (End / 1000 / 8000); received messages stay on screen</li>
+                        <li>Stop restores mode/limit/timeout to defaults (Newest / 1000 / 8000); received messages stay on screen</li>
                         <li><b>Auto-follow</b>: each new batch pins the view to the bottom</li>
                         <li><b>Mouse wheel</b> → pauses follow, freezes at that position</li>
                         <li><b>Shift + G</b> → snaps back to bottom and resumes follow</li>
