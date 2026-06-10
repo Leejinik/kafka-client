@@ -1,5 +1,5 @@
 import { Lang, t } from "../lib/i18n";
-import { useBackdropClose } from "../lib/useBackdropClose";
+import { Modal } from "./Modal";
 
 interface Props {
     lang: Lang;
@@ -9,44 +9,35 @@ interface Props {
 }
 
 export function ReleaseNotesDialog({ lang, version, notes, onClose }: Props) {
-    const backdrop = useBackdropClose(onClose);
     const trimmed = (notes ?? "").trim();
     return (
-        <div className="modal-backdrop" {...backdrop}>
-            <div
-                className="modal"
-                onClick={(e) => e.stopPropagation()}
-                style={{ width: 640, maxWidth: "94vw", maxHeight: "80vh", display: "flex", flexDirection: "column" }}
-            >
-                <div className="modal-header">
-                    {t(lang, "update.notes.title", { version })}
-                </div>
-                <div
-                    className="modal-body"
-                    style={{ overflow: "auto", flex: 1, fontSize: 13, lineHeight: 1.65 }}
+        <Modal
+            title={t(lang, "update.notes.title", { version })}
+            width={640}
+            maxHeight="80vh"
+            onClose={onClose}
+            bodyStyle={{ overflow: "auto", flex: 1, fontSize: 13, lineHeight: 1.65 }}
+            footer={
+                <button className="primary" onClick={onClose}>
+                    {t(lang, "update.notes.close")}
+                </button>
+            }
+        >
+            {trimmed === "" ? (
+                <div className="muted">{t(lang, "update.notes.empty")}</div>
+            ) : (
+                <pre
+                    style={{
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        fontFamily:
+                            "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                        margin: 0,
+                    }}
                 >
-                    {trimmed === "" ? (
-                        <div className="muted">{t(lang, "update.notes.empty")}</div>
-                    ) : (
-                        <pre
-                            style={{
-                                whiteSpace: "pre-wrap",
-                                wordBreak: "break-word",
-                                fontFamily:
-                                    "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                                margin: 0,
-                            }}
-                        >
-                            {trimmed}
-                        </pre>
-                    )}
-                </div>
-                <div className="modal-footer">
-                    <button className="primary" onClick={onClose}>
-                        {t(lang, "update.notes.close")}
-                    </button>
-                </div>
-            </div>
-        </div>
+                    {trimmed}
+                </pre>
+            )}
+        </Modal>
     );
 }

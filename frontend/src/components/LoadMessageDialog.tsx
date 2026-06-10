@@ -8,7 +8,7 @@ import {
     importSaved,
     listSaved,
 } from "../lib/savedMessages";
-import { useBackdropClose } from "../lib/useBackdropClose";
+import { Modal } from "./Modal";
 
 interface Props {
     lang: Lang;
@@ -21,7 +21,6 @@ export function LoadMessageDialog({ lang, onClose, onLoad }: Props) {
     const [search, setSearch] = useState("");
     const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const backdrop = useBackdropClose(onClose);
 
     const handleExport = () => {
         try {
@@ -77,13 +76,9 @@ export function LoadMessageDialog({ lang, onClose, onLoad }: Props) {
     };
 
     return (
-        <div className="modal-backdrop" {...backdrop}>
-            <div
-                className="modal"
-                style={{ width: 720, maxWidth: "96vw", maxHeight: "90vh" }}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div className="modal-header" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Modal
+            title={
+                <>
                     <span>{t(lang, "saved.load.title")}</span>
                     <span className="count-pill">{all.length}</span>
                     <div style={{ flex: 1 }} />
@@ -104,73 +99,75 @@ export function LoadMessageDialog({ lang, onClose, onLoad }: Props) {
                             e.target.value = "";
                         }}
                     />
+                </>
+            }
+            width={720}
+            maxHeight="90vh"
+            headerStyle={{ display: "flex", alignItems: "center", gap: 8 }}
+            onClose={onClose}
+            bodyStyle={{ display: "flex", flexDirection: "column", gap: 10 }}
+            footer={<button onClick={onClose}>{t(lang, "help.close")}</button>}
+        >
+            {msg && (
+                <div style={{ color: msg.kind === "ok" ? "var(--ok)" : "var(--danger)", fontSize: 12 }}>
+                    {msg.text}
                 </div>
-                <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {msg && (
-                        <div style={{ color: msg.kind === "ok" ? "var(--ok)" : "var(--danger)", fontSize: 12 }}>
-                            {msg.text}
-                        </div>
-                    )}
-                    <input
-                        placeholder={t(lang, "saved.load.search")}
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        autoFocus
-                    />
+            )}
+            <input
+                placeholder={t(lang, "saved.load.search")}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                autoFocus
+            />
 
-                    {all.length === 0 ? (
-                        <div className="muted" style={{ padding: 14, textAlign: "center" }}>
-                            {t(lang, "saved.load.empty")}
-                        </div>
-                    ) : (
-                        <div style={{ border: "1px solid var(--border)", borderRadius: 6, overflow: "auto", maxHeight: "60vh" }}>
-                            <table className="inner-table">
-                                <thead>
-                                    <tr>
-                                        <th>{t(lang, "saved.col.name")}</th>
-                                        <th style={{ width: 220 }}>{t(lang, "saved.col.topic")}</th>
-                                        <th style={{ width: 50 }}>P</th>
-                                        <th style={{ width: 130 }}>{t(lang, "saved.col.savedAt")}</th>
-                                        <th style={{ width: 130 }}></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {filtered.map((m) => (
-                                        <tr key={m.id}>
-                                            <td>{m.name}</td>
-                                            <td className="mono">{m.topic}</td>
-                                            <td className="mono">{m.partition}</td>
-                                            <td className="muted" style={{ fontSize: 11 }}>
-                                                {new Date(m.savedAt).toLocaleString()}
-                                            </td>
-                                            <td>
-                                                <div className="row" style={{ gap: 4, justifyContent: "flex-end" }}>
-                                                    <button
-                                                        className="small primary"
-                                                        onClick={() => onLoad(m)}
-                                                    >
-                                                        {t(lang, "saved.load.pick")}
-                                                    </button>
-                                                    <button
-                                                        className="small danger"
-                                                        onClick={() => onDelete(m.id)}
-                                                        title={t(lang, "saved.load.delete")}
-                                                    >
-                                                        ✕
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
+            {all.length === 0 ? (
+                <div className="muted" style={{ padding: 14, textAlign: "center" }}>
+                    {t(lang, "saved.load.empty")}
                 </div>
-                <div className="modal-footer">
-                    <button onClick={onClose}>{t(lang, "help.close")}</button>
+            ) : (
+                <div style={{ border: "1px solid var(--border)", borderRadius: 6, overflow: "auto", maxHeight: "60vh" }}>
+                    <table className="inner-table">
+                        <thead>
+                            <tr>
+                                <th>{t(lang, "saved.col.name")}</th>
+                                <th style={{ width: 220 }}>{t(lang, "saved.col.topic")}</th>
+                                <th style={{ width: 50 }}>P</th>
+                                <th style={{ width: 130 }}>{t(lang, "saved.col.savedAt")}</th>
+                                <th style={{ width: 130 }}></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filtered.map((m) => (
+                                <tr key={m.id}>
+                                    <td>{m.name}</td>
+                                    <td className="mono">{m.topic}</td>
+                                    <td className="mono">{m.partition}</td>
+                                    <td className="muted" style={{ fontSize: 11 }}>
+                                        {new Date(m.savedAt).toLocaleString()}
+                                    </td>
+                                    <td>
+                                        <div className="row" style={{ gap: 4, justifyContent: "flex-end" }}>
+                                            <button
+                                                className="small primary"
+                                                onClick={() => onLoad(m)}
+                                            >
+                                                {t(lang, "saved.load.pick")}
+                                            </button>
+                                            <button
+                                                className="small danger"
+                                                onClick={() => onDelete(m.id)}
+                                                title={t(lang, "saved.load.delete")}
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
-            </div>
-        </div>
+            )}
+        </Modal>
     );
 }

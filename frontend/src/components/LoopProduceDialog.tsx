@@ -7,7 +7,7 @@ import {
     StopLoopProduce,
 } from "../../wailsjs/go/main/App";
 import { kafka } from "../../wailsjs/go/models";
-import { useBackdropClose } from "../lib/useBackdropClose";
+import { Modal } from "./Modal";
 
 type Mode = "max" | "interval";
 type MaxStop = "count" | "duration";
@@ -118,18 +118,30 @@ export function LoopProduceDialog({
         }
     };
 
-    const backdrop = useBackdropClose(onClose);
-
     return (
-        <div className="modal-backdrop" {...backdrop}>
-            <div
-                className="modal"
-                style={{ width: 560, maxWidth: "96vw" }}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div className="modal-header">{t(lang, "loop.title")}</div>
-                <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div className="muted" style={{ fontSize: 12 }}>
+        <Modal
+            title={t(lang, "loop.title")}
+            width={560}
+            onClose={onClose}
+            bodyStyle={{ display: "flex", flexDirection: "column", gap: 12 }}
+            footer={
+                <>
+                    <button onClick={onClose}>{t(lang, "help.close")}</button>
+                    {isRunning ? (
+                        <button className="danger" onClick={handleStop}>{t(lang, "loop.stop")}</button>
+                    ) : (
+                        <button
+                            className="primary"
+                            onClick={handleStart}
+                            disabled={busy || !topic}
+                        >
+                            {t(lang, "loop.start")}
+                        </button>
+                    )}
+                </>
+            }
+        >
+            <div className="muted" style={{ fontSize: 12 }}>
                         {t(lang, "loop.source")}: <span className="mono">{topic || "—"}</span>
                         {" · "}P{partition}
                         {keyStr && <> · key=<span className="mono">{keyStr}</span></>}
@@ -278,22 +290,6 @@ export function LoopProduceDialog({
                         </div>
                     )}
                     {err && <div style={{ color: "var(--danger)", fontSize: 12 }}>{err}</div>}
-                </div>
-                <div className="modal-footer">
-                    <button onClick={onClose}>{t(lang, "help.close")}</button>
-                    {isRunning ? (
-                        <button className="danger" onClick={handleStop}>{t(lang, "loop.stop")}</button>
-                    ) : (
-                        <button
-                            className="primary"
-                            onClick={handleStart}
-                            disabled={busy || !topic}
-                        >
-                            {t(lang, "loop.start")}
-                        </button>
-                    )}
-                </div>
-            </div>
-        </div>
+        </Modal>
     );
 }

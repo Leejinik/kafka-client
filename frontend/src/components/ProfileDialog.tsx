@@ -3,7 +3,7 @@ import { Lang, t } from "../lib/i18n";
 import { errString } from "../lib/errors";
 import { SaveProfile, TestConnection } from "../../wailsjs/go/main/App";
 import { profile } from "../../wailsjs/go/models";
-import { useBackdropClose } from "../lib/useBackdropClose";
+import { Modal } from "./Modal";
 
 interface Props {
     lang: Lang;
@@ -46,7 +46,6 @@ export function ProfileDialog({ lang, editing, onClose, onSaved }: Props) {
     const [hostAliasesText, setHostAliasesText] = useState(aliasesToText(editing?.hostAliases));
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-    const backdrop = useBackdropClose(busy ? undefined : onClose);
 
     const handleTest = async () => {
         const list = parseServers(servers);
@@ -92,12 +91,24 @@ export function ProfileDialog({ lang, editing, onClose, onSaved }: Props) {
     };
 
     return (
-        <div className="modal-backdrop" {...backdrop}>
-            <div className="modal" onClick={(e) => e.stopPropagation()}>
-                <div className="modal-header">
-                    {editing ? t(lang, "profile.dialog.title.edit") : t(lang, "profile.dialog.title.new")}
-                </div>
-                <div className="modal-body">
+        <Modal
+            title={editing ? t(lang, "profile.dialog.title.edit") : t(lang, "profile.dialog.title.new")}
+            onClose={busy ? undefined : onClose}
+            footer={
+                <>
+                    <button onClick={handleTest} disabled={busy}>
+                        {t(lang, "profile.test")}
+                    </button>
+                    <div style={{ flex: 1 }} />
+                    <button onClick={onClose} disabled={busy}>
+                        {t(lang, "profile.cancel")}
+                    </button>
+                    <button className="primary" onClick={handleSave} disabled={busy}>
+                        {t(lang, "profile.save")}
+                    </button>
+                </>
+            }
+        >
                     <div className="form-row">
                         <label>{t(lang, "profile.name")}</label>
                         <input value={name} onChange={(e) => setName(e.target.value)} />
@@ -135,20 +146,6 @@ export function ProfileDialog({ lang, editing, onClose, onSaved }: Props) {
                             {msg.text}
                         </div>
                     )}
-                </div>
-                <div className="modal-footer">
-                    <button onClick={handleTest} disabled={busy}>
-                        {t(lang, "profile.test")}
-                    </button>
-                    <div style={{ flex: 1 }} />
-                    <button onClick={onClose} disabled={busy}>
-                        {t(lang, "profile.cancel")}
-                    </button>
-                    <button className="primary" onClick={handleSave} disabled={busy}>
-                        {t(lang, "profile.save")}
-                    </button>
-                </div>
-            </div>
-        </div>
+        </Modal>
     );
 }

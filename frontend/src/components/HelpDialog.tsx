@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Lang, t } from "../lib/i18n";
-import { useBackdropClose } from "../lib/useBackdropClose";
+import { Modal } from "./Modal";
 
 interface Props {
     lang: Lang;
@@ -17,7 +17,6 @@ export function HelpDialog({ lang, onClose }: Props) {
     const sections = lang === "en" ? buildSectionsEn() : buildSectionsKo();
     const [active, setActive] = useState(sections[0].id);
     const bodyRef = useRef<HTMLDivElement>(null);
-    const backdrop = useBackdropClose(onClose);
 
     useEffect(() => {
         const el = bodyRef.current;
@@ -50,17 +49,18 @@ export function HelpDialog({ lang, onClose }: Props) {
     };
 
     return (
-        <div className="modal-backdrop" {...backdrop}>
+        <Modal
+            title={t(lang, "help.dialog.title")}
+            width={820}
+            height="82vh"
+            maxHeight="82vh"
+            bodyStyle={{ padding: 0, overflow: "hidden", flex: 1, minHeight: 0, display: "flex" }}
+            onClose={onClose}
+            footer={<button onClick={onClose}>{t(lang, "help.close")}</button>}
+        >
             <div
-                className="modal"
-                style={{ width: 820, maxWidth: "96vw", height: "82vh", maxHeight: "82vh" }}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div className="modal-header">{t(lang, "help.dialog.title")}</div>
-                <div className="modal-body" style={{ padding: 0, overflow: "hidden", flex: 1, minHeight: 0, display: "flex" }}>
-                    <div
-                        style={{
-                            width: 180,
+                style={{
+                    width: 180,
                             borderRight: "1px solid var(--border)",
                             overflow: "auto",
                             padding: "10px 0",
@@ -86,20 +86,15 @@ export function HelpDialog({ lang, onClose }: Props) {
                         ))}
                     </div>
 
-                    <div ref={bodyRef} style={{ flex: 1, overflow: "auto", padding: "16px 24px", fontSize: 13.5, lineHeight: 1.7 }}>
-                        {sections.map((s) => (
-                            <div key={s.id} id={`help-${s.id}`} style={{ marginBottom: 32 }}>
-                                <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>{s.title}</h3>
-                                <div>{s.body}</div>
-                            </div>
-                        ))}
+            <div ref={bodyRef} style={{ flex: 1, overflow: "auto", padding: "16px 24px", fontSize: 13.5, lineHeight: 1.7 }}>
+                {sections.map((s) => (
+                    <div key={s.id} id={`help-${s.id}`} style={{ marginBottom: 32 }}>
+                        <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>{s.title}</h3>
+                        <div>{s.body}</div>
                     </div>
-                </div>
-                <div className="modal-footer">
-                    <button onClick={onClose}>{t(lang, "help.close")}</button>
-                </div>
+                ))}
             </div>
-        </div>
+        </Modal>
     );
 }
 
@@ -142,6 +137,7 @@ function buildSectionsKo(): Section[] {
                     <p><b>탭</b> — 토픽 / 조회 / 발행 / 설정. 연결되지 않은 상태에서는 설정 외 탭은 잠깁니다.</p>
                     <p><b>탭 상태 유지</b> — 탭을 옮겨도 각 탭의 상태가 그대로 보존됩니다. 조회 탭에 걸어둔 <M>tail -f</M>는 다른 탭에 있는 동안에도 계속 돌면서 메시지를 모으고, 조회 결과·검색·페이지 위치, 발행 폼의 키/값/헤더도 그대로 남아 있습니다. 예: 조회에서 tail 켜고 → 발행에서 메시지 보낸 뒤 → 조회로 돌아오면 그 사이 들어온 메시지까지 이어서 보입니다. (다른 클러스터로 전환하면 초기화. 토픽 탭은 숨겨진 동안 폴링을 멈췄다가 돌아오면 재개합니다.)</p>
                     <p><b>토픽 상태 공유</b> — 조회와 발행 탭은 같은 선택 토픽을 공유합니다. 한쪽에서 토픽을 바꾸면 다른 쪽도 따라옵니다 (단, 다른 클러스터로 전환하면 초기화). 조회 탭에서 tail이 도는 중에는 발행 쪽에서 토픽을 바꿔도 진행 중인 tail은 끊기지 않습니다.</p>
+                    <p><b>모달(다이얼로그) 공통 조작</b> — 모든 팝업은 <b>헤더를 드래그</b>해 위치를 옮기고 <b>우하단 모서리</b>를 끌어 크기를 조절할 수 있습니다. 닫기는 <b>ESC</b> 또는 헤더 우측 <M>×</M>로만 가능 — <b>바깥의 어두운 영역을 클릭해도 닫히지 않습니다</b> (실수로 닫히는 것 방지). 저장/삭제 등 작업이 진행 중일 때는 닫기가 잠깁니다.</p>
                 </>
             ),
         },
@@ -178,6 +174,7 @@ function buildSectionsKo(): Section[] {
                         <li>펼친 파티션 영역 → 파티션 재할당</li>
                         <li>펼친 그룹 카드 → Offset 변경 / 그룹 삭제</li>
                     </ul>
+                    <p><b>ms 단위 config 입력 (🧮)</b> — 토픽 생성/수정 다이얼로그에서 <M>retention.ms</M>·<M>segment.ms</M>처럼 <M>.ms</M>로 끝나는 항목 옆 <M>🧮</M> 버튼을 누르면 <b>일·시·분</b> ± 버튼으로 값을 쌓아 ms로 환산해 넣을 수 있습니다 (외부 계산기 불필요). 각 단위는 0 미만으로 내려가지 않으며 초·ms 단위는 제외됩니다.</p>
                     <p><b>msg/sec 컬럼</b> — 최근 60초 메시지 수 ÷ 60 (1초마다 갱신). End offset 변화량 기반.</p>
                     <p><b>그룹 카드 partition Lag 표</b>는 컨슈머 그룹별로 partition 단위 Committed / End / Lag를 보여줍니다. 멤버가 표시되며 partition 할당이 없는 멤버는 <M>(할당 없음 / standby)</M>로 표시됩니다.</p>
                     <p><b>Committed / End Offset / Lag 셀에 hover</b>하면 10초 간격으로 측정한 <b>초당 변화량</b>이 툴팁으로 표시됩니다. End Offset은 발행 속도(<M>publish/sec</M>), Committed는 소비 속도, Lag는 lag 증감 추이 파악용. 펼친 직후 첫 샘플은 기준값이라 두 번째 SLOW tick부터 값이 나옵니다.</p>
@@ -431,6 +428,7 @@ function buildSectionsEn(): Section[] {
                     <p><b>Tabs</b> — Topics / Consume / Produce / Settings. Non-Settings tabs are locked until you connect.</p>
                     <p><b>Tab state is preserved</b> — switching tabs no longer resets anything. A <M>tail -f</M> started on the Consume tab keeps running and collecting messages while you're on another tab, and the fetched rows / search / page position plus the Produce form (key, value, headers) all stay put. So: start a tail on Consume → publish from Produce → come back to Consume and you'll see the messages that arrived in the meantime, continued in place. (Cleared when you switch clusters. The Topics tab pauses its polling while hidden and resumes on return.)</p>
                     <p><b>Shared topic state</b> — Consume and Produce share the selected topic. Switching the topic on one auto-updates the other (cleared when you switch clusters). While a tail is running on Consume, changing the topic from Produce won't interrupt the live tail.</p>
+                    <p><b>Dialog controls (all modals)</b> — every popup can be <b>moved by dragging its header</b> and <b>resized from the bottom-right corner</b>. Close with <b>ESC</b> or the <M>×</M> at the top-right only — <b>clicking the dark area outside does NOT close it</b> (prevents accidental dismissal). Closing is locked while a save/delete action is in progress.</p>
                 </>
             ),
         },
@@ -467,6 +465,7 @@ function buildSectionsEn(): Section[] {
                         <li>Partition area in expanded view → reassign</li>
                         <li>Group card in expanded view → reset offsets / delete group</li>
                     </ul>
+                    <p><b>Entering ms configs (🧮)</b> — in the create/edit topic dialog, fields ending in <M>.ms</M> (<M>retention.ms</M>, <M>segment.ms</M>…) show a <M>🧮</M> button: add up <b>days / hours / minutes</b> with ± buttons and it fills in the millisecond value (no external calculator). Each unit can't go below zero, and seconds/ms are intentionally excluded.</p>
                     <p><b>msg/sec column</b> — messages in the last 60s ÷ 60 (refreshes every 1s), computed from end-offset deltas.</p>
                     <p><b>Group card partition lag table</b> shows per-partition Committed / End / Lag. Members are listed; members without an assignment show as <M>(no assignment / standby)</M>.</p>
                     <p><b>Hover the Committed / End Offset / Lag cells</b> on a group card to see the <b>per-second delta</b> measured over the 10s SLOW tick interval. End Offset shows publish rate (<M>publish/sec</M>), Committed shows consume rate, Lag shows whether lag is growing or shrinking. The first sample after expand is the baseline — values appear from the second SLOW tick onward.</p>

@@ -7,7 +7,7 @@ import {
     UpdateTopicPartitions,
 } from "../../wailsjs/go/main/App";
 import { kafka } from "../../wailsjs/go/models";
-import { useBackdropClose } from "../lib/useBackdropClose";
+import { Modal } from "./Modal";
 import { DurationCalculator } from "./DurationCalculator";
 
 interface Props {
@@ -35,7 +35,6 @@ export function TopicEditDialog({ lang, profileId, topic, onClose, onSaved }: Pr
     const [replication, setReplication] = useState(0);
     const [rows, setRows] = useState<ConfigRow[]>([]);
     const [calcRow, setCalcRow] = useState<number | null>(null);
-    const backdrop = useBackdropClose(busy ? undefined : onClose);
 
     // Topic configs whose key ends in ".ms" are durations; offer the ms calculator.
     const isMsKey = (key: string) => key.trim().toLowerCase().endsWith(".ms");
@@ -105,12 +104,20 @@ export function TopicEditDialog({ lang, profileId, topic, onClose, onSaved }: Pr
     };
 
     return (
-        <div className="modal-backdrop" {...backdrop}>
-            <div className="modal" style={{ width: 680, maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
-                <div className="modal-header">
-                    {t(lang, "topic.edit.title")} <span className="mono muted" style={{ marginLeft: 6 }}>{topic}</span>
-                </div>
-                <div className="modal-body">
+        <Modal
+            title={<>{t(lang, "topic.edit.title")} <span className="mono muted" style={{ marginLeft: 6 }}>{topic}</span></>}
+            width={680}
+            maxHeight="85vh"
+            onClose={busy ? undefined : onClose}
+            footer={
+                <>
+                    <button onClick={onClose} disabled={busy}>{t(lang, "profile.cancel")}</button>
+                    <button className="primary" onClick={handleSave} disabled={busy || loading}>
+                        {busy ? t(lang, "common.loading") : t(lang, "topic.edit.submit")}
+                    </button>
+                </>
+            }
+        >
                     {loading ? (
                         <div className="muted">{t(lang, "common.loading")}</div>
                     ) : (
@@ -212,14 +219,6 @@ export function TopicEditDialog({ lang, profileId, topic, onClose, onSaved }: Pr
                     )}
 
                     {err && <div style={{ color: "var(--danger)", fontSize: 12 }}>{err}</div>}
-                </div>
-                <div className="modal-footer">
-                    <button onClick={onClose} disabled={busy}>{t(lang, "profile.cancel")}</button>
-                    <button className="primary" onClick={handleSave} disabled={busy || loading}>
-                        {busy ? t(lang, "common.loading") : t(lang, "topic.edit.submit")}
-                    </button>
-                </div>
-            </div>
-        </div>
+        </Modal>
     );
 }

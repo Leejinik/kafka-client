@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Lang, t } from "../lib/i18n";
 import { errString } from "../lib/errors";
 import { DeleteTopic } from "../../wailsjs/go/main/App";
-import { useBackdropClose } from "../lib/useBackdropClose";
+import { Modal } from "./Modal";
 
 interface Props {
     lang: Lang;
@@ -15,7 +15,6 @@ interface Props {
 export function TopicDeleteDialog({ lang, profileId, topic, onClose, onDeleted }: Props) {
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
-    const backdrop = useBackdropClose(busy ? undefined : onClose);
 
     const handleDelete = async () => {
         setBusy(true);
@@ -30,12 +29,20 @@ export function TopicDeleteDialog({ lang, profileId, topic, onClose, onDeleted }
     };
 
     return (
-        <div className="modal-backdrop" {...backdrop}>
-            <div className="modal" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
-                <div className="modal-header" style={{ color: "var(--danger)" }}>
-                    {t(lang, "topic.delete.title")}
-                </div>
-                <div className="modal-body">
+        <Modal
+            title={t(lang, "topic.delete.title")}
+            width={420}
+            headerStyle={{ color: "var(--danger)" }}
+            onClose={busy ? undefined : onClose}
+            footer={
+                <>
+                    <button onClick={onClose} disabled={busy}>{t(lang, "profile.cancel")}</button>
+                    <button className="danger" onClick={handleDelete} disabled={busy}>
+                        {busy ? t(lang, "common.loading") : t(lang, "topic.delete.confirm")}
+                    </button>
+                </>
+            }
+        >
                     <div style={{ fontSize: 13 }}>
                         {t(lang, "topic.delete.body1")}
                     </div>
@@ -46,14 +53,6 @@ export function TopicDeleteDialog({ lang, profileId, topic, onClose, onDeleted }
                         {t(lang, "topic.delete.warning")}
                     </div>
                     {err && <div style={{ color: "var(--danger)", fontSize: 12, marginTop: 8 }}>{err}</div>}
-                </div>
-                <div className="modal-footer">
-                    <button onClick={onClose} disabled={busy}>{t(lang, "profile.cancel")}</button>
-                    <button className="danger" onClick={handleDelete} disabled={busy}>
-                        {busy ? t(lang, "common.loading") : t(lang, "topic.delete.confirm")}
-                    </button>
-                </div>
-            </div>
-        </div>
+        </Modal>
     );
 }

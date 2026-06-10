@@ -156,6 +156,28 @@ tbody tr.selected { background: var(--selected-bg); }
     border-top: 1px solid var(--border);
     display: flex; justify-content: flex-end; gap: 8px;
 }
+/* draggable + resizable modal shell (see components/Modal.tsx) */
+.modal { position: relative; overflow: hidden; }
+.modal-header { display: flex; align-items: center; gap: 8px; }
+.modal-drag-handle { cursor: move; user-select: none; }
+.modal-title { flex: 1; min-width: 0; }
+.modal-close {
+    flex: 0 0 auto;
+    background: transparent; border: none; box-shadow: none;
+    font-size: 20px; line-height: 1; padding: 0 4px; margin: -2px -4px -2px 0;
+    color: var(--text-dim); cursor: pointer;
+}
+.modal-close:hover:not(:disabled) { background: transparent; color: var(--text); }
+.modal-close:disabled { opacity: 0.4; cursor: default; }
+.modal-body { flex: 1 1 auto; min-height: 0; }
+.modal-resize-handle {
+    position: absolute; right: 0; bottom: 0;
+    width: 16px; height: 16px; cursor: nwse-resize; z-index: 5;
+    background: linear-gradient(135deg, transparent 0 46%, var(--border) 46% 54%, transparent 54% 66%, var(--border) 66% 74%, transparent 74%);
+}
+.modal-resize-handle:hover {
+    background: linear-gradient(135deg, transparent 0 46%, var(--text-dim) 46% 54%, transparent 54% 66%, var(--text-dim) 66% 74%, transparent 74%);
+}
 .form-row { margin-bottom: 12px; }
 
 /* toast */

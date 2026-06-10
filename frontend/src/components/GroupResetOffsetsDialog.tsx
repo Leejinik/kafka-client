@@ -3,7 +3,7 @@ import { Lang, t } from "../lib/i18n";
 import { errString } from "../lib/errors";
 import { ResetGroupOffsetsForTopic } from "../../wailsjs/go/main/App";
 import { kafka } from "../../wailsjs/go/models";
-import { useBackdropClose } from "../lib/useBackdropClose";
+import { Modal } from "./Modal";
 
 type Mode = "earliest" | "latest" | "timestamp" | "explicit";
 
@@ -27,7 +27,6 @@ export function GroupResetOffsetsDialog({
     const [mode, setMode] = useState<Mode>("latest");
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
-    const backdrop = useBackdropClose(busy ? undefined : onClose);
     const [timestamp, setTimestamp] = useState("");
     // Explicit offsets keyed by partition (string for empty-input UX).
     const [explicit, setExplicit] = useState<Record<number, string>>(() => {
@@ -99,18 +98,31 @@ export function GroupResetOffsetsDialog({
     };
 
     return (
-        <div className="modal-backdrop" {...backdrop}>
-            <div
-                className="modal"
-                style={{ width: 640, maxWidth: "96vw", maxHeight: "90vh" }}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div className="modal-header">
+        <Modal
+            title={
+                <>
                     {t(lang, "group.reset.title")}
                     <span className="mono muted" style={{ marginLeft: 8 }}>{group.groupId}</span>
-                </div>
-                <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div className="row" style={{ gap: 14, alignItems: "center", fontSize: 12 }}>
+                </>
+            }
+            width={640}
+            maxHeight="90vh"
+            bodyStyle={{ display: "flex", flexDirection: "column", gap: 12 }}
+            onClose={busy ? undefined : onClose}
+            footer={
+                <>
+                    <button onClick={onClose} disabled={busy}>{t(lang, "profile.cancel")}</button>
+                    <button
+                        className="primary"
+                        onClick={handleExecute}
+                        disabled={busy || isActive}
+                    >
+                        {busy ? t(lang, "reassign.executing") : t(lang, "group.reset.submit")}
+                    </button>
+                </>
+            }
+        >
+            <div className="row" style={{ gap: 14, alignItems: "center", fontSize: 12 }}>
                         <span className="muted">{t(lang, "group.reset.topic")}: <span className="mono">{topic}</span></span>
                         <span className="muted">
                             {t(lang, "group.reset.state")}:{" "}
@@ -195,19 +207,7 @@ export function GroupResetOffsetsDialog({
                         </div>
                     )}
 
-                    {err && <div style={{ color: "var(--danger)", fontSize: 12 }}>{err}</div>}
-                </div>
-                <div className="modal-footer">
-                    <button onClick={onClose} disabled={busy}>{t(lang, "profile.cancel")}</button>
-                    <button
-                        className="primary"
-                        onClick={handleExecute}
-                        disabled={busy || isActive}
-                    >
-                        {busy ? t(lang, "reassign.executing") : t(lang, "group.reset.submit")}
-                    </button>
-                </div>
-            </div>
-        </div>
+            {err && <div style={{ color: "var(--danger)", fontSize: 12 }}>{err}</div>}
+        </Modal>
     );
 }

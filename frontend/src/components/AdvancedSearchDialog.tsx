@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Lang, t } from "../lib/i18n";
-import { useBackdropClose } from "../lib/useBackdropClose";
+import { Modal } from "./Modal";
 
 interface Props {
     lang: Lang;
@@ -19,41 +19,41 @@ function parseCsv(raw: string): string[] {
 
 export function AdvancedSearchDialog({ lang, initialTokens, onClose, onSave }: Props) {
     const [text, setText] = useState(initialTokens.join(", "));
-    const backdrop = useBackdropClose(onClose);
 
     const submit = () => {
         onSave(parseCsv(text));
     };
 
     return (
-        <div className="modal-backdrop" {...backdrop}>
-            <div className="modal" style={{ width: 480 }} onClick={(e) => e.stopPropagation()}>
-                <div className="modal-header">{t(lang, "consume.advanced.dialog.title")}</div>
-                <div className="modal-body">
-                    <div className="form-row">
-                        <textarea
-                            value={text}
-                            onChange={(e) => setText(e.target.value)}
-                            placeholder={t(lang, "consume.advanced.dialog.placeholder")}
-                            autoFocus
-                            rows={3}
-                            style={{ width: "100%", resize: "vertical", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit();
-                            }}
-                        />
-                    </div>
-                    <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
-                        {t(lang, "consume.advanced.dialog.hint")}
-                    </div>
-                </div>
-                <div className="modal-footer">
+        <Modal
+            title={t(lang, "consume.advanced.dialog.title")}
+            width={480}
+            onClose={onClose}
+            footer={
+                <>
                     <button onClick={() => setText("")}>{t(lang, "consume.advanced.dialog.clear")}</button>
                     <div style={{ flex: 1 }} />
                     <button onClick={onClose}>{t(lang, "consume.advanced.dialog.cancel")}</button>
                     <button className="primary" onClick={submit}>{t(lang, "consume.advanced.dialog.ok")}</button>
-                </div>
+                </>
+            }
+        >
+            <div className="form-row">
+                <textarea
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    placeholder={t(lang, "consume.advanced.dialog.placeholder")}
+                    autoFocus
+                    rows={3}
+                    style={{ width: "100%", resize: "vertical", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit();
+                    }}
+                />
             </div>
-        </div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+                {t(lang, "consume.advanced.dialog.hint")}
+            </div>
+        </Modal>
     );
 }

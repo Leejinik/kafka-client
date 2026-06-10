@@ -2,7 +2,7 @@ import { Fragment, useState } from "react";
 import { Lang, t } from "../lib/i18n";
 import { errString } from "../lib/errors";
 import { CreateTopic } from "../../wailsjs/go/main/App";
-import { useBackdropClose } from "../lib/useBackdropClose";
+import { Modal } from "./Modal";
 import { DurationCalculator } from "./DurationCalculator";
 
 interface Props {
@@ -31,7 +31,6 @@ export function TopicCreateDialog({ lang, profileId, onClose, onCreated }: Props
     const [calcRow, setCalcRow] = useState<number | null>(null);
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
-    const backdrop = useBackdropClose(busy ? undefined : onClose);
 
     const updateRow = (i: number, patch: Partial<KV>) => {
         setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -68,10 +67,19 @@ export function TopicCreateDialog({ lang, profileId, onClose, onCreated }: Props
     };
 
     return (
-        <div className="modal-backdrop" {...backdrop}>
-            <div className="modal" style={{ width: 560 }} onClick={(e) => e.stopPropagation()}>
-                <div className="modal-header">{t(lang, "topic.create.title")}</div>
-                <div className="modal-body">
+        <Modal
+            title={t(lang, "topic.create.title")}
+            width={560}
+            onClose={busy ? undefined : onClose}
+            footer={
+                <>
+                    <button onClick={onClose} disabled={busy}>{t(lang, "profile.cancel")}</button>
+                    <button className="primary" onClick={handleCreate} disabled={busy}>
+                        {busy ? t(lang, "common.loading") : t(lang, "topic.create.submit")}
+                    </button>
+                </>
+            }
+        >
                     <div className="form-row">
                         <label>{t(lang, "topic.name")}</label>
                         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="my.topic" />
@@ -169,14 +177,6 @@ export function TopicCreateDialog({ lang, profileId, onClose, onCreated }: Props
                     </div>
 
                     {err && <div style={{ color: "var(--danger)", fontSize: 12 }}>{err}</div>}
-                </div>
-                <div className="modal-footer">
-                    <button onClick={onClose} disabled={busy}>{t(lang, "profile.cancel")}</button>
-                    <button className="primary" onClick={handleCreate} disabled={busy}>
-                        {busy ? t(lang, "common.loading") : t(lang, "topic.create.submit")}
-                    </button>
-                </div>
-            </div>
-        </div>
+        </Modal>
     );
 }

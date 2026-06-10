@@ -26,7 +26,7 @@ import {
     ReassignPartitions,
 } from "../../wailsjs/go/main/App";
 import { kafka } from "../../wailsjs/go/models";
-import { useBackdropClose } from "../lib/useBackdropClose";
+import { Modal } from "./Modal";
 
 interface Props {
     lang: Lang;
@@ -53,8 +53,6 @@ export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSub
 
     // chip swap popover state
     const [swapAt, setSwapAt] = useState<{ partition: number; slot: number; x: number; y: number } | null>(null);
-
-    const backdrop = useBackdropClose(busy ? undefined : onClose);
 
     useEffect(() => {
         let alive = true;
@@ -153,17 +151,31 @@ export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSub
     };
 
     return (
-        <div className="modal-backdrop" {...backdrop}>
-            <div
-                className="modal"
-                style={{ width: 820, maxWidth: "96vw", maxHeight: "90vh" }}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div className="modal-header">
+        <>
+        <Modal
+            title={
+                <>
                     {t(lang, "reassign.title")}
                     <span className="mono muted" style={{ marginLeft: 8 }}>{topic}</span>
-                </div>
-                <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                </>
+            }
+            width={820}
+            maxHeight="90vh"
+            bodyStyle={{ display: "flex", flexDirection: "column", gap: 12 }}
+            onClose={busy ? undefined : onClose}
+            footer={
+                <>
+                    <button onClick={onClose} disabled={busy}>{t(lang, "profile.cancel")}</button>
+                    <button
+                        className="primary"
+                        onClick={handleExecute}
+                        disabled={busy || loading || changedRows.length === 0}
+                    >
+                        {busy ? t(lang, "reassign.executing") : t(lang, "reassign.execute")}
+                    </button>
+                </>
+            }
+        >
                     {loading ? (
                         <div className="muted">{t(lang, "common.loading")}</div>
                     ) : (
@@ -270,18 +282,7 @@ export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSub
                     )}
 
                     {err && <div style={{ color: "var(--danger)", fontSize: 12 }}>{err}</div>}
-                </div>
-                <div className="modal-footer">
-                    <button onClick={onClose} disabled={busy}>{t(lang, "profile.cancel")}</button>
-                    <button
-                        className="primary"
-                        onClick={handleExecute}
-                        disabled={busy || loading || changedRows.length === 0}
-                    >
-                        {busy ? t(lang, "reassign.executing") : t(lang, "reassign.execute")}
-                    </button>
-                </div>
-            </div>
+        </Modal>
 
             {swapAt && (
                 <SwapPopover
@@ -298,7 +299,7 @@ export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSub
                     onClose={() => setSwapAt(null)}
                 />
             )}
-        </div>
+        </>
     );
 }
 
