@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Lang, t } from "../lib/i18n";
 import { errString } from "../lib/errors";
 import { CreateTopic } from "../../wailsjs/go/main/App";
 import { useBackdropClose } from "../lib/useBackdropClose";
+import { DurationCalculator } from "./DurationCalculator";
 
 interface Props {
     lang: Lang;
@@ -27,6 +28,7 @@ export function TopicCreateDialog({ lang, profileId, onClose, onCreated }: Props
     const [partitions, setPartitions] = useState(1);
     const [replication, setReplication] = useState(3);
     const [rows, setRows] = useState<KV[]>([{ key: "", value: "" }]);
+    const [calcRow, setCalcRow] = useState<number | null>(null);
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
     const backdrop = useBackdropClose(busy ? undefined : onClose);
@@ -35,7 +37,13 @@ export function TopicCreateDialog({ lang, profileId, onClose, onCreated }: Props
         setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
     };
     const addRow = () => setRows((rs) => [...rs, { key: "", value: "" }]);
-    const removeRow = (i: number) => setRows((rs) => rs.filter((_, idx) => idx !== i));
+    const removeRow = (i: number) => {
+        setRows((rs) => rs.filter((_, idx) => idx !== i));
+        setCalcRow(null); // row indices shift on delete; close the calculator to be safe
+    };
+
+    // Topic configs whose key ends in ".ms" are durations; offer the ms calculator.
+    const isMsKey = (key: string) => key.trim().toLowerCase().endsWith(".ms");
 
     const handleCreate = async () => {
         if (!name.trim()) { setErr(t(lang, "topic.create.nameRequired")); return; }
@@ -100,24 +108,56 @@ export function TopicCreateDialog({ lang, profileId, onClose, onCreated }: Props
                                 </tr>
                             </thead>
                             <tbody>
-                                {rows.map((r, i) => (
-                                    <tr key={i}>
-                                        <td>
-                                            <input
-                                                list="topic-cfg-keys"
-                                                value={r.key}
-                                                onChange={(e) => updateRow(i, { key: e.target.value })}
-                                                placeholder="retention.ms"
-                                            />
-                                        </td>
-                                        <td>
-                                            <input value={r.value} onChange={(e) => updateRow(i, { value: e.target.value })} />
-                                        </td>
-                                        <td>
-                                            <button className="small" onClick={() => removeRow(i)}>×</button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                {rows.map((r, i) => {
+                                    const showCalc = isMsKey(r.key);
+                                    return (
+                                        <Fragment key={i}>
+                                            <tr>
+                                                <td>
+                                                    <input
+                                                        list="topic-cfg-keys"
+                                                        value={r.key}
+                                                        onChange={(e) => updateRow(i, { key: e.target.value })}
+                                                        placeholder="retention.ms"
+                                                    />
+                                                </td>
+                                                <td>
+                                                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                                        <input
+                                                            style={{ flex: 1 }}
+                                                            value={r.value}
+                                                            onChange={(e) => updateRow(i, { value: e.target.value })}
+                                                        />
+                                                        {showCalc && (
+                                                            <button
+                                                                className="small"
+                                                                title={t(lang, "dur.open")}
+                                                                onClick={() => setCalcRow(calcRow === i ? null : i)}
+                                                                style={{ flex: "0 0 auto", ...(calcRow === i ? { borderColor: "var(--accent)", color: "var(--accent)" } : {}) }}
+                                                            >
+                                                                🧮
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <button className="small" onClick={() => removeRow(i)}>×</button>
+                                                </td>
+                                            </tr>
+                                            {calcRow === i && showCalc && (
+                                                <tr>
+                                                    <td colSpan={3} style={{ background: "var(--panel-2)" }}>
+                                                        <DurationCalculator
+                                                            lang={lang}
+                                                            onApply={(ms) => { updateRow(i, { value: String(ms) }); setCalcRow(null); }}
+                                                            onClose={() => setCalcRow(null)}
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </Fragment>
+                                    );
+                                })}
                             </tbody>
                         </table>
                         <datalist id="topic-cfg-keys">

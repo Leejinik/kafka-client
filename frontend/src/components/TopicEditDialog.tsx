@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Lang, t } from "../lib/i18n";
 import { errString } from "../lib/errors";
 import {
@@ -8,6 +8,7 @@ import {
 } from "../../wailsjs/go/main/App";
 import { kafka } from "../../wailsjs/go/models";
 import { useBackdropClose } from "../lib/useBackdropClose";
+import { DurationCalculator } from "./DurationCalculator";
 
 interface Props {
     lang: Lang;
@@ -33,7 +34,11 @@ export function TopicEditDialog({ lang, profileId, topic, onClose, onSaved }: Pr
     const [partitions, setPartitions] = useState(0);
     const [replication, setReplication] = useState(0);
     const [rows, setRows] = useState<ConfigRow[]>([]);
+    const [calcRow, setCalcRow] = useState<number | null>(null);
     const backdrop = useBackdropClose(busy ? undefined : onClose);
+
+    // Topic configs whose key ends in ".ms" are durations; offer the ms calculator.
+    const isMsKey = (key: string) => key.trim().toLowerCase().endsWith(".ms");
 
     useEffect(() => {
         let alive = true;
@@ -146,27 +151,54 @@ export function TopicEditDialog({ lang, profileId, topic, onClose, onSaved }: Pr
                                         <tbody>
                                             {rows.map((r, i) => {
                                                 const changed = r.value !== r.original;
+                                                const sensitiveLocked = r.sensitive && r.value === "";
+                                                const showCalc = isMsKey(r.key) && !sensitiveLocked;
                                                 return (
-                                                    <tr key={i + r.key}>
-                                                        <td className="mono">{r.key || (
-                                                            <input
-                                                                placeholder="key"
-                                                                onChange={(e) => {
-                                                                    const v = e.target.value;
-                                                                    setRows((rs) => rs.map((rr, idx) => idx === i ? { ...rr, key: v } : rr));
-                                                                }}
-                                                            />
-                                                        )}</td>
-                                                        <td>
-                                                            <input
-                                                                value={r.sensitive && r.value === "" ? "(sensitive)" : r.value}
-                                                                disabled={r.sensitive && r.value === ""}
-                                                                onChange={(e) => updateRow(i, e.target.value)}
-                                                                style={changed ? { borderColor: "var(--accent)", background: "var(--accent-soft-bg)" } : undefined}
-                                                            />
-                                                        </td>
-                                                        <td className="muted" style={{ fontSize: 11 }}>{r.source.replace(/_CONFIG$/, "")}</td>
-                                                    </tr>
+                                                    <Fragment key={i + r.key}>
+                                                        <tr>
+                                                            <td className="mono">{r.key || (
+                                                                <input
+                                                                    placeholder="key"
+                                                                    onChange={(e) => {
+                                                                        const v = e.target.value;
+                                                                        setRows((rs) => rs.map((rr, idx) => idx === i ? { ...rr, key: v } : rr));
+                                                                    }}
+                                                                />
+                                                            )}</td>
+                                                            <td>
+                                                                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                                                    <input
+                                                                        value={sensitiveLocked ? "(sensitive)" : r.value}
+                                                                        disabled={sensitiveLocked}
+                                                                        onChange={(e) => updateRow(i, e.target.value)}
+                                                                        style={{ flex: 1, ...(changed ? { borderColor: "var(--accent)", background: "var(--accent-soft-bg)" } : {}) }}
+                                                                    />
+                                                                    {showCalc && (
+                                                                        <button
+                                                                            className="small"
+                                                                            title={t(lang, "dur.open")}
+                                                                            onClick={() => setCalcRow(calcRow === i ? null : i)}
+                                                                            style={{ flex: "0 0 auto", ...(calcRow === i ? { borderColor: "var(--accent)", color: "var(--accent)" } : {}) }}
+                                                                        >
+                                                                            🧮
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="muted" style={{ fontSize: 11 }}>{r.source.replace(/_CONFIG$/, "")}</td>
+                                                        </tr>
+                                                        {calcRow === i && showCalc && (
+                                                            <tr>
+                                                                <td colSpan={3} style={{ background: "var(--panel-2)" }}>
+                                                                    <DurationCalculator
+                                                                        lang={lang}
+                                                                        onApply={(ms) => { updateRow(i, String(ms)); setCalcRow(null); }}
+                                                                        onClose={() => setCalcRow(null)}
+                                                                    />
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </Fragment>
                                                 );
                                             })}
                                         </tbody>
