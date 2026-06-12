@@ -34,14 +34,29 @@ func applyPlatform(exePath, newPath string) error {
 }
 
 func buildUpdateScript(exePath, newPath string) string {
+	// NOTE: do NOT use `timeout` for the delay. The helper runs detached with
+	// no console (CREATE_NO_WINDOW) and redirected output, and `timeout`
+	// requires a real console input handle — without one it errors out and
+	// returns *instantly* (and on localized Windows spews "%d초 기다리는 중"),
+	// turning :loop into a console-flooding busy-loop. `ping -n 2 127.0.0.1`
+	// is the standard batch sleep that works headless and emits nothing.
 	var sb strings.Builder
 	sb.WriteString("@echo off\r\n")
 	sb.WriteString("setlocal\r\n")
+	sb.WriteString("set /a tries=0\r\n")
 	sb.WriteString(":loop\r\n")
-	sb.WriteString("timeout /t 1 /nobreak >nul 2>&1\r\n")
+	sb.WriteString("ping -n 2 127.0.0.1 >nul 2>&1\r\n")
 	sb.WriteString(fmt.Sprintf("move /Y \"%s\" \"%s\" >nul 2>&1\r\n", newPath, exePath))
-	sb.WriteString("if errorlevel 1 goto loop\r\n")
+	sb.WriteString("if not errorlevel 1 goto launch\r\n")
+	// Give up after ~120 attempts (~2 min) so a permanently-locked file can't
+	// loop forever. On giveup we skip the relaunch — the old exe is presumably
+	// still running — and just clean up.
+	sb.WriteString("set /a tries+=1\r\n")
+	sb.WriteString("if %tries% lss 120 goto loop\r\n")
+	sb.WriteString("goto cleanup\r\n")
+	sb.WriteString(":launch\r\n")
 	sb.WriteString(fmt.Sprintf("start \"\" \"%s\"\r\n", exePath))
+	sb.WriteString(":cleanup\r\n")
 	// Self-delete: jump past EOF, then delete this script.
 	sb.WriteString("(goto) 2>nul & del \"%~f0\"\r\n")
 	return sb.String()
