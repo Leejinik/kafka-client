@@ -135,6 +135,7 @@ function buildSectionsKo(): Section[] {
                     </ul>
                     <p><b>상단바(topbar)</b> — 현재 선택된 클러스터 이름 + <M>(controller: B<i>n</i>)</M> 표시 (연결되어 있을 때만). 우측 <M>연결</M> / <M>연결 끊기</M> 버튼.</p>
                     <p><b>탭</b> — 토픽 / 조회 / 발행 / 설정. 연결되지 않은 상태에서는 설정 외 탭은 잠깁니다.</p>
+                    <p><b>Unix 타임스탬프 계산기 모드</b> — 클러스터에 연결하지 않은 빈 화면의 <M>Unix 타임스탬프 계산기</M> 버튼을 누르면 사이드바·상단바·탭 등 Kafka UI가 모두 사라지고, 창이 작게 줄어든 채 <b>Unix ms ↔ 사람 시간 변환기</b>만 단독으로 뜹니다. <b>항상 위</b> 체크박스로 다른 창 위에 고정할 수 있고, <M>Kafka Client 모드로 전환</M> 버튼을 누르면 원래 앱 화면과 창 크기로 돌아오면서 항상-위도 해제됩니다. (조회 탭 디테일 패널 하단에도 동일한 변환기가 있습니다 — 6번 참고.)</p>
                     <p><b>탭 상태 유지</b> — 탭을 옮겨도 각 탭의 상태가 그대로 보존됩니다. 조회 탭에 걸어둔 <M>tail -f</M>는 다른 탭에 있는 동안에도 계속 돌면서 메시지를 모으고, 조회 결과·검색·페이지 위치, 발행 폼의 키/값/헤더도 그대로 남아 있습니다. 예: 조회에서 tail 켜고 → 발행에서 메시지 보낸 뒤 → 조회로 돌아오면 그 사이 들어온 메시지까지 이어서 보입니다. (다른 클러스터로 전환하면 초기화. 토픽 탭은 숨겨진 동안 폴링을 멈췄다가 돌아오면 재개합니다.)</p>
                     <p><b>토픽 상태 공유</b> — 조회와 발행 탭은 같은 선택 토픽을 공유합니다. 한쪽에서 토픽을 바꾸면 다른 쪽도 따라옵니다 (단, 다른 클러스터로 전환하면 초기화). 조회 탭에서 tail이 도는 중에는 발행 쪽에서 토픽을 바꿔도 진행 중인 tail은 끊기지 않습니다.</p>
                     <p><b>모달(다이얼로그) 공통 조작</b> — 모든 팝업은 <b>헤더를 드래그</b>해 위치를 옮기고 <b>우하단 모서리</b>를 끌어 크기를 조절할 수 있습니다. 닫기는 <b>ESC</b> 또는 헤더 우측 <M>×</M>로만 가능 — <b>바깥의 어두운 영역을 클릭해도 닫히지 않습니다</b> (실수로 닫히는 것 방지). 저장/삭제 등 작업이 진행 중일 때는 닫기가 잠깁니다.</p>
@@ -223,7 +224,7 @@ function buildSectionsKo(): Section[] {
             title: "6. 조회",
             body: (
                 <>
-                    <p>상단 툴바: 토픽 / 모드 / (조건 입력) / 최대 메시지 수 / <b>페이지 단위</b> / 타임아웃(ms) / <M>가져오기</M>.</p>
+                    <p>상단 툴바: 토픽 / 모드 / (조건 입력) / 최대 메시지 수 / <b>페이지 단위</b> / 타임아웃(ms) / <M>가져오기</M>. 숫자 입력 칸(<M>최대 메시지 수</M>·<M>타임아웃 (ms)</M>) 앞에는 항목 이름 라벨이 항상 표시됩니다 — 더 이상 마우스를 올려야 보이는 툴팁이 아닙니다.</p>
                     <ul>
                         <li><b>tail -f</b> 모드에선 모든 보조 인풋이 숨겨집니다 (의미가 없으므로)</li>
                         <li><b>타임스탬프 범위</b> 모드에선 단일 페이지가 없으므로 최대 메시지 수 입력이 사라지고 <b>페이지 단위</b> 드롭다운만 노출</li>
@@ -323,7 +324,7 @@ function buildSectionsKo(): Section[] {
             title: "7. 발행",
             body: (
                 <>
-                    <p>상단 툴바: 토픽 / 파티션 / [불러오기] / [반복 발행]. 본문에서 키, 값, 헤더 입력 후 <M>[발행]</M>.</p>
+                    <p>상단 툴바: 토픽 / 파티션 / [불러오기] / [반복 발행]. 본문에서 키, 값, 헤더 입력 후 <M>[발행]</M>. 파티션 입력 칸 앞에도 <M>파티션 (-1 = 자동)</M> 라벨이 함께 표시됩니다.</p>
                     <ul>
                         <li><b>파티션</b> — <M>-1</M>이면 키 해시 / 라운드로빈으로 자동 배정. 특정 파티션 강제 시 0, 1, 2 ...</li>
                         <li><b>헤더 입력 형식</b> — <M>key=value</M> 한 줄에 하나. 빈 줄 / <M>=</M> 없는 줄은 무시</li>
@@ -426,6 +427,7 @@ function buildSectionsEn(): Section[] {
                     </ul>
                     <p><b>Top bar</b> — current cluster name + <M>(controller: B<i>n</i>)</M> when connected; right-side <M>Connect</M> / <M>Disconnect</M>.</p>
                     <p><b>Tabs</b> — Topics / Consume / Produce / Settings. Non-Settings tabs are locked until you connect.</p>
+                    <p><b>Unix timestamp calculator mode</b> — on the empty (not-yet-connected) screen, the <M>Unix timestamp calculator</M> button drops the entire Kafka UI (sidebar / top bar / tabs) and shrinks the window down to a standalone <b>Unix ms ↔ human time converter</b>. An <b>Always on top</b> checkbox pins it above other windows; <M>Switch to Kafka Client mode</M> restores the full app and window size (and clears always-on-top). (The same converter also lives at the bottom of the Consume detail panel — see section 6.)</p>
                     <p><b>Tab state is preserved</b> — switching tabs no longer resets anything. A <M>tail -f</M> started on the Consume tab keeps running and collecting messages while you're on another tab, and the fetched rows / search / page position plus the Produce form (key, value, headers) all stay put. So: start a tail on Consume → publish from Produce → come back to Consume and you'll see the messages that arrived in the meantime, continued in place. (Cleared when you switch clusters. The Topics tab pauses its polling while hidden and resumes on return.)</p>
                     <p><b>Shared topic state</b> — Consume and Produce share the selected topic. Switching the topic on one auto-updates the other (cleared when you switch clusters). While a tail is running on Consume, changing the topic from Produce won't interrupt the live tail.</p>
                     <p><b>Dialog controls (all modals)</b> — every popup can be <b>moved by dragging its header</b> and <b>resized from the bottom-right corner</b>. Close with <b>ESC</b> or the <M>×</M> at the top-right only — <b>clicking the dark area outside does NOT close it</b> (prevents accidental dismissal). Closing is locked while a save/delete action is in progress.</p>
@@ -514,7 +516,7 @@ function buildSectionsEn(): Section[] {
             title: "6. Consume",
             body: (
                 <>
-                    <p>Top toolbar: topic / mode / (condition input) / Max messages / <b>Page size</b> / Timeout (ms) / <M>Fetch</M>.</p>
+                    <p>Top toolbar: topic / mode / (condition input) / Max messages / <b>Page size</b> / Timeout (ms) / <M>Fetch</M>. The number fields (<M>Max messages</M>, <M>Timeout (ms)</M>) carry an always-visible inline label — no longer a hover-only tooltip.</p>
                     <ul>
                         <li><b>tail -f</b> hides every supporting input (none of them apply)</li>
                         <li><b>Timestamp range</b> hides Max messages too — there's no single-shot fetch in that mode, only the <b>Page size</b> dropdown</li>
@@ -614,7 +616,7 @@ function buildSectionsEn(): Section[] {
             title: "7. Produce",
             body: (
                 <>
-                    <p>Top toolbar: topic / partition / [Load] / [Loop produce]. Body: key, value, headers — then <M>[Send]</M>.</p>
+                    <p>Top toolbar: topic / partition / [Load] / [Loop produce]. Body: key, value, headers — then <M>[Send]</M>. The partition field also shows an inline <M>Partition (-1 = auto)</M> label.</p>
                     <ul>
                         <li><b>Partition</b> — <M>-1</M> auto-assigns (key hash / round-robin); set 0, 1, 2 ... to force a specific partition</li>
                         <li><b>Headers input format</b> — one <M>key=value</M> per line; blank lines and lines without <M>=</M> are ignored</li>

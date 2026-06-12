@@ -942,27 +942,29 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                 {mode !== "tail" && (
                     <>
                         {mode !== "timestamp" && (
-                            <input
-                                type="number"
-                                title={t(lang, "consume.max")}
-                                // -1 toggles cursor pagination for non-timestamp
-                                // modes; positive values are a single-shot cap.
-                                min={-1}
-                                style={{ width: 90 }}
-                                value={maxMessagesInput}
-                                onChange={(e) => setMaxMessagesInput(e.target.value)}
-                                onBlur={() => {
-                                    const n = normalizeMax(maxMessagesInput, mode);
-                                    setMaxMessages(n);
-                                    setMaxMessagesInput(String(n));
-                                }}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter" && topic && !loading && !tailing) {
-                                        e.preventDefault();
-                                        void handleFetch();
-                                    }
-                                }}
-                            />
+                            <label className="toolbar-field">
+                                <span className="toolbar-field-label">{t(lang, "consume.max")}</span>
+                                <input
+                                    type="number"
+                                    // -1 toggles cursor pagination for non-timestamp
+                                    // modes; positive values are a single-shot cap.
+                                    min={-1}
+                                    style={{ width: 90 }}
+                                    value={maxMessagesInput}
+                                    onChange={(e) => setMaxMessagesInput(e.target.value)}
+                                    onBlur={() => {
+                                        const n = normalizeMax(maxMessagesInput, mode);
+                                        setMaxMessages(n);
+                                        setMaxMessagesInput(String(n));
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter" && topic && !loading && !tailing) {
+                                            e.preventDefault();
+                                            void handleFetch();
+                                        }
+                                    }}
+                                />
+                            </label>
                         )}
                         {pagingKind !== null && (
                             <select
@@ -978,19 +980,21 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                 ))}
                             </select>
                         )}
-                        <input
-                            type="number"
-                            title={t(lang, "consume.timeout")}
-                            style={{ width: 90 }}
-                            value={timeoutMs}
-                            onChange={(e) => setTimeoutMs(Number(e.target.value) || 0)}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter" && topic && !loading && !tailing) {
-                                    e.preventDefault();
-                                    void handleFetch();
-                                }
-                            }}
-                        />
+                        <label className="toolbar-field">
+                            <span className="toolbar-field-label">{t(lang, "consume.timeout")}</span>
+                            <input
+                                type="number"
+                                style={{ width: 90 }}
+                                value={timeoutMs}
+                                onChange={(e) => setTimeoutMs(Number(e.target.value) || 0)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && topic && !loading && !tailing) {
+                                        e.preventDefault();
+                                        void handleFetch();
+                                    }
+                                }}
+                            />
+                        </label>
                     </>
                 )}
                 <button

@@ -119,6 +119,13 @@ All sizes persist in `localStorage` and double-clicking any handle resets to def
 ### 8. Visible column borders + invisible-but-large drag hit area
 `.col-resizer` is 8 px wide and transparent (so it doesn't compete with the gray `border-right`). On hover/active, the resizer paints a 3 px centered accent-color line. The always-visible boundary comes from the `<th>` / `<td>` `border-right` (scoped to `table.resizable-grid` so other tables aren't affected).
 
+### 9. Standalone Unix timestamp calculator mode
+`App.tsx` keeps a `calcMode` flag. When set, the component returns **early** — before the `app-root` grid — and renders only the `TimestampConverter` centered in a full-window flex box, so the sidebar / topbar / tabs are gone entirely (not merely hidden).
+
+Entering/leaving the mode drives the OS window through the Wails JS runtime (`../wailsjs/runtime`): `WindowSetSize` to `CALC_WIN` (420×300) on enter, back to `APP_WIN` (1280×820) on exit, each followed by `WindowCenter`. An `alwaysOnTop` flag maps to `WindowSetAlwaysOnTop` and is force-cleared on exit. A `modeInitDone` ref skips the very first effect run so app launch never resizes/recenters the window.
+
+`TimestampConverter` exposes optional `headerButton` (rendered left of the [지금] button) and `footer` (below the inputs) slots, letting the same component serve both the Consume detail panel and the standalone mode (which fills them with the "switch back" button and the "always on top" checkbox).
+
 ## File-by-file responsibilities
 
 ### Backend

@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-05-19
+Last updated: 2026-06-12
 
 ## Implemented feature inventory
 
@@ -49,6 +49,15 @@ Last updated: 2026-05-19
 - [x] Single-message send (key / value / headers / partition)
 - [x] First-visit dismissible help banner ("?" button to reopen later)
 - [x] Topic selection shared with Consume
+
+### Standalone Unix timestamp calculator (v1.0.0_18)
+- [x] **Calculator mode** entered from the disconnected placeholder ("Unix 타임스탬프 계산기" button)
+- [x] Drops the entire Kafka chrome (sidebar / topbar / tabs) — renders only the `TimestampConverter` card, centered full-window
+- [x] Shrinks the OS window to `CALC_WIN` (420×300) via Wails `WindowSetSize` + `WindowCenter`; restores to `APP_WIN` (1280×820) on exit
+- [x] **"항상 위" (always-on-top)** checkbox — `WindowSetAlwaysOnTop`; auto-cleared on exit
+- [x] "Kafka Client 모드로 전환" button (in the converter header, next to [지금]) returns to the full app
+- [x] `TimestampConverter` gained optional `headerButton` / `footer` props so the same component serves both the Consume panel and the standalone mode
+- [x] Initial-mount guard so launch never recenters/resizes the window
 
 ### Settings
 - [x] ko / en language toggle (no restart)
@@ -113,6 +122,8 @@ Last updated: 2026-05-19
 | 2026-05-19   | Reassign IPC submits only changed partitions, not all                     | `AlterPartitionAssignments` accepts a subset; sending all 50 when 3 changed would needlessly trigger controller work and obscure diffs |
 | 2026-05-19   | Group offset reset scoped to the topic the GroupCard sits under, not all topics the group consumes | UI context = a specific topic's expand area; cross-topic scope would surprise the user. Matches `kafka-consumer-groups.sh --topic` flag |
 | 2026-05-19   | Active groups blocked in UI before the broker error                       | Kafka returns UNKNOWN_MEMBER_ID / REBALANCE_IN_PROGRESS on delete/commit while members are live. Pre-emptive disable is clearer than surfacing the raw error |
+| 2026-06-12   | Standalone calculator mode does a full-window takeover (early return before `app-root`), not an in-content panel | User wanted the converter "꽉 차게" with all Kafka UI gone. Resizing the OS window to match (via Wails runtime) makes it a genuine compact utility, not a tab |
+| 2026-06-12   | Toolbar number inputs got visible inline labels (`.toolbar-field`), tooltips removed | `title` tooltips only appear on hover — users couldn't tell 메시지 수 / 타임아웃 / 파티션 apart at a glance |
 | 2026-05-19   | Topics tab split into FAST (1s) + SLOW (10s) tick                          | User wanted near-real-time feel. Per-partition state + reassignment progress + msg/sec moved to 1s; `ListTopics` + `ListGroupsForTopic` (which calls `kadm.Lag(all)` and is the only expensive call) stayed at 10s. In-flight guard drops overlapping ticks |
 
 ## Useful paths

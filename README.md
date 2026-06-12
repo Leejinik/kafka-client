@@ -109,6 +109,11 @@ UI sizes (sidebar width, preview width, grid column widths) persist in WebView2/
 - **Resizable preview panel** in Consume (220–900 px, double-click resets to 380)
 - All sizes persist across restarts via `localStorage`
 
+### Unix timestamp calculator mode
+- Reachable from the disconnected screen (**Unix 타임스탬프 계산기** button) — no cluster connection needed
+- Hides the whole Kafka UI and shrinks the window to a standalone **Unix ms ↔ local time** converter
+- **Always-on-top** checkbox; **Kafka Client 모드로 전환** restores the full app and window size
+
 ## What's intentionally NOT here (yet)
 
 - Authentication: PLAINTEXT only. SASL/SSL/Kerberos = deferred

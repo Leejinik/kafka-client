@@ -115,13 +115,15 @@ export function ProducePage({ lang, profileId, defaultTopic, topic, onTopicChang
                         <option key={tn} value={tn}>{tn}</option>
                     ))}
                 </select>
-                <input
-                    type="number"
-                    title={t(lang, "produce.partition")}
-                    style={{ width: 100 }}
-                    value={partition}
-                    onChange={(e) => setPartition(Number(e.target.value))}
-                />
+                <label className="toolbar-field">
+                    <span className="toolbar-field-label">{t(lang, "produce.partition")}</span>
+                    <input
+                        type="number"
+                        style={{ width: 100 }}
+                        value={partition}
+                        onChange={(e) => setPartition(Number(e.target.value))}
+                    />
+                </label>
                 <button onClick={() => setLoadDialog(true)} title={t(lang, "saved.load.title")}>
                     {t(lang, "saved.load.button")}
                 </button>
