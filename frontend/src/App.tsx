@@ -468,6 +468,7 @@ export default function App() {
                             themePref={themePref}
                             setThemePref={setThemePref}
                             onProfilesChanged={refreshProfiles}
+                            onUpdateAvailable={setUpdateInfo}
                         />
                     )}
 

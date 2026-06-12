@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Lang, t } from "../lib/i18n";
 import { errString } from "../lib/errors";
-import { ConfigDir, ExportProfiles, ImportProfiles } from "../../wailsjs/go/main/App";
+import { ConfigDir, ExportProfiles, ImportProfiles, CheckForUpdate } from "../../wailsjs/go/main/App";
+import { updater } from "../../wailsjs/go/models";
 import type { ThemePref } from "../App";
 
 interface Props {
@@ -10,14 +11,38 @@ interface Props {
     themePref: ThemePref;
     setThemePref: (t: ThemePref) => void;
     onProfilesChanged: () => Promise<void> | void;
+    // Hand a found update back to App so it can show the shared
+    // UpdatePromptDialog (which owns the download/apply flow).
+    onUpdateAvailable: (info: updater.UpdateInfo) => void;
 }
 
-export function SettingsPage({ lang, setLang, themePref, setThemePref, onProfilesChanged }: Props) {
+export function SettingsPage({ lang, setLang, themePref, setThemePref, onProfilesChanged, onUpdateAvailable }: Props) {
     const [configDir, setConfigDir] = useState("");
     const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+    const [checking, setChecking] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => { ConfigDir().then(setConfigDir).catch(() => {}); }, []);
+
+    const handleCheckUpdate = async () => {
+        setChecking(true);
+        setMsg(null);
+        try {
+            const info = await CheckForUpdate();
+            // Dev / unstamped builds intentionally skip the GitHub check.
+            if (!info.currentVersion || info.currentVersion === "dev") {
+                setMsg({ kind: "ok", text: t(lang, "settings.update.dev") });
+            } else if (info.available) {
+                onUpdateAvailable(info);
+            } else {
+                setMsg({ kind: "ok", text: t(lang, "settings.update.latest", { current: info.currentVersion }) });
+            }
+        } catch (e) {
+            setMsg({ kind: "err", text: t(lang, "settings.update.failed", { err: errString(e) }) });
+        } finally {
+            setChecking(false);
+        }
+    };
 
     const handleExport = async () => {
         try {
@@ -101,6 +126,15 @@ export function SettingsPage({ lang, setLang, themePref, setThemePref, onProfile
             {msg && (
                 <div style={{ color: msg.kind === "ok" ? "var(--ok)" : "var(--danger)" }}>{msg.text}</div>
             )}
+
+            <div className="form-row">
+                <label>{t(lang, "settings.update")}</label>
+                <div className="row">
+                    <button onClick={handleCheckUpdate} disabled={checking}>
+                        {checking ? t(lang, "settings.update.checking") : t(lang, "settings.update.check")}
+                    </button>
+                </div>
+            </div>
 
             <div className="form-row">
                 <label>{t(lang, "settings.about")}</label>
