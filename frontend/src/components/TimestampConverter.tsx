@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Lang, t } from "../lib/i18n";
 import { formatLocalHuman, parseHuman } from "../lib/formatTime";
 
@@ -7,9 +7,16 @@ interface Props {
     // Override the wrapper appearance. Default style matches the Consume
     // detail-panel bottom strip (subtle panel-2 background, top border).
     style?: React.CSSProperties;
+    // Extra control rendered in the header row, to the left of the [지금]
+    // button. Used by the standalone calculator mode to host the
+    // "switch back to Kafka Client" button.
+    headerButton?: ReactNode;
+    // Extra content rendered below the input rows. Used by calculator mode
+    // for the "always on top" checkbox.
+    footer?: ReactNode;
 }
 
-export function TimestampConverter({ lang, style }: Props) {
+export function TimestampConverter({ lang, style, headerButton, footer }: Props) {
     const [unix, setUnix] = useState("");
     const [human, setHuman] = useState("");
     const [unixErr, setUnixErr] = useState(false);
@@ -77,6 +84,7 @@ export function TimestampConverter({ lang, style }: Props) {
                 <div className="group-section-title" style={{ flex: 1 }}>
                     {t(lang, "consume.converter.title")}
                 </div>
+                {headerButton}
                 <button className="small" onClick={swapNow} title={t(lang, "consume.converter.now")}>
                     {t(lang, "consume.converter.now")}
                 </button>
@@ -99,6 +107,7 @@ export function TimestampConverter({ lang, style }: Props) {
                     style={fieldStyle(humanErr)}
                 />
             </div>
+            {footer}
         </div>
     );
 }

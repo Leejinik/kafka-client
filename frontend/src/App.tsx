@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import "./App.css";
 import { Lang, t } from "./lib/i18n";
 import { errString } from "./lib/errors";
@@ -15,9 +15,15 @@ import {
     MarkReleaseNotesSeen,
 } from "../wailsjs/go/main/App";
 import { kafka, updater } from "../wailsjs/go/models";
+import {
+    WindowSetSize,
+    WindowCenter,
+    WindowSetAlwaysOnTop,
+} from "../wailsjs/runtime";
 import { ContextMenu, ContextMenuItem } from "./components/ContextMenu";
 import { VerticalSplitter, useResizableWidth } from "./components/ResizableColumns";
 import { ProfileDialog } from "./components/ProfileDialog";
+import { TimestampConverter } from "./components/TimestampConverter";
 import { HelpDialog } from "./components/HelpDialog";
 import { UpdatePromptDialog } from "./components/UpdatePromptDialog";
 import { ReleaseNotesDialog } from "./components/ReleaseNotesDialog";
@@ -27,6 +33,11 @@ import { ProducePage } from "./pages/ProducePage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 type TabKey = "topics" | "consume" | "produce" | "settings";
+
+// Window dimensions for the two modes. Full app matches main.go's startup
+// size; calc mode shrinks the OS window to wrap the compact converter card.
+const APP_WIN = { w: 1280, h: 820 };
+const CALC_WIN = { w: 420, h: 300 };
 export type ThemePref = "light" | "dark" | "onion" | "dark-onion" | "system";
 const THEME_KEY = "kfc.theme";
 
@@ -99,6 +110,37 @@ export default function App() {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [connectedSet, setConnectedSet] = useState<Set<string>>(new Set());
     const [tab, setTab] = useState<TabKey>("topics");
+    // Standalone Unix-timestamp calculator, offered on the disconnected
+    // placeholder so the converter is usable without a cluster connection.
+    // Entering it shrinks the OS window to the converter; leaving restores
+    // the full app window. `alwaysOnTop` is a calc-mode-only affordance.
+    const [calcMode, setCalcMode] = useState(false);
+    const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+
+    // Resize / recenter the OS window when the mode flips. On leaving calc
+    // mode, also drop always-on-top and reset its checkbox state. Skip the
+    // initial mount so we don't recenter the window on every launch.
+    const modeInitDone = useRef(false);
+    useEffect(() => {
+        if (!modeInitDone.current) {
+            modeInitDone.current = true;
+            return;
+        }
+        if (calcMode) {
+            WindowSetSize(CALC_WIN.w, CALC_WIN.h);
+            WindowCenter();
+        } else {
+            WindowSetAlwaysOnTop(false);
+            setAlwaysOnTop(false);
+            WindowSetSize(APP_WIN.w, APP_WIN.h);
+            WindowCenter();
+        }
+    }, [calcMode]);
+
+    // Apply the always-on-top toggle while in calc mode.
+    useEffect(() => {
+        if (calcMode) WindowSetAlwaysOnTop(alwaysOnTop);
+    }, [alwaysOnTop, calcMode]);
     const [dialog, setDialog] = useState<{ open: boolean; editing?: profile.Profile }>({ open: false });
     const [toast, setToast] = useState<string | null>(null);
     const [clusterInfo, setClusterInfo] = useState<Record<string, kafka.ClusterInfo>>({});
@@ -253,6 +295,60 @@ export default function App() {
         ]
         : [];
 
+    // Calculator mode: drop the entire Kafka chrome (sidebar / topbar / tabs)
+    // and show just the compact timestamp converter, centered full-window.
+    // The "Kafka Client 모드로 전환" button in its header restores the app.
+    if (calcMode) {
+        return (
+            <div
+                style={{
+                    height: "100vh",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "var(--bg)",
+                }}
+            >
+                <TimestampConverter
+                    lang={lang}
+                    style={{
+                        borderTop: "none",
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                        width: 360,
+                        maxWidth: "90%",
+                    }}
+                    headerButton={
+                        <button className="small" onClick={() => setCalcMode(false)}>
+                            {t(lang, "status.back_to_kafka")}
+                        </button>
+                    }
+                    footer={
+                        <label
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "flex-end",
+                                gap: 6,
+                                fontSize: 12,
+                                color: "var(--text-dim)",
+                                cursor: "pointer",
+                                whiteSpace: "nowrap",
+                            }}
+                        >
+                            {t(lang, "status.always_on_top")}
+                            <input
+                                type="checkbox"
+                                checked={alwaysOnTop}
+                                onChange={(e) => setAlwaysOnTop(e.target.checked)}
+                            />
+                        </label>
+                    }
+                />
+            </div>
+        );
+    }
+
     return (
         <div
             className="app-root"
@@ -383,8 +479,18 @@ export default function App() {
                         profiles starts fresh. Settings renders alongside them
                         — being on Settings doesn't tear the tail down. */}
                     {tab !== "settings" && (!selected || !connected) ? (
-                        <div className="placeholder muted">
-                            {!selected ? t(lang, "status.no_profile") : t(lang, "status.connect_required")}
+                        <div
+                            className="placeholder muted"
+                            style={{ flexDirection: "column", gap: 12 }}
+                        >
+                            <div>
+                                {!selected
+                                    ? t(lang, "status.no_profile")
+                                    : t(lang, "status.connect_required")}
+                            </div>
+                            <button className="small" onClick={() => setCalcMode(true)}>
+                                {t(lang, "status.open_ts_calc")}
+                            </button>
                         </div>
                     ) : selected && connected ? (
                         <>
