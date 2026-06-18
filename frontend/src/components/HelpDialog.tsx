@@ -189,12 +189,22 @@ function buildSectionsKo(): Section[] {
             body: (
                 <>
                     <p>partition 행마다 <b>RF만큼의 chip</b>이 broker 번호로 표시됩니다. 첫 chip이 <b>preferred leader</b>.</p>
+                    <p><b>Leader 칼럼은 클러스터의 실제 live 리더</b>를 보여줍니다. 이게 preferred(replica[0])와 다르면 <M>≠Bn</M> 경고와 상단 <M>⚑ 리더 불일치</M>가 표시됩니다.</p>
                     <ul>
-                        <li><b>chip 드래그</b> → replica 순서 변경 (= leader 변경)</li>
-                        <li><b>chip 클릭</b> → 다른 broker로 교체 / 이 자리 제거</li>
+                        <li><b>chip 드래그</b> → replica 순서 변경 = <b>preferred leader 변경(재할당)</b></li>
+                        <li><b>chip 클릭</b> → 다른 broker로 교체</li>
+                        <li>행별 <M>↺</M> → <b>그 행의 편집만 원래대로 되돌리기</b> (편집했을 때만 표시되며 아무것도 실행하지 않음). 전체는 상단 <b>전체 초기화</b></li>
                         <li><b>변경된 행만 보기</b> 토글 — 큰 토픽에서 변경분만 확인할 때</li>
-                        <li><b>전체 초기화</b> — 현재 다이얼로그의 모든 변경 되돌리기</li>
                         <li><M>Execute</M>는 <b>변경된 파티션만</b> Kafka에 전송</li>
+                    </ul>
+                    <div style={{ background: "var(--warn-soft-bg)", border: "1px solid var(--warn)", borderRadius: 6, padding: "8px 12px", margin: "10px 0" }}>
+                        <b>리더가 안 바뀐다고요?</b> replica 순서를 바꾸는 재할당(Execute)은 <b>preferred</b> 리더만 지정합니다. 실제 리더를 옮기려면 <b>preferred leader election</b>이 필요합니다. replica가 이미 원하는 순서라면 재할당은 “0개 변경됨”이 되고 아무 일도 일어나지 않습니다.
+                    </div>
+                    <p><b>즉시 수정</b> 체크박스(기본 켜짐)가 Execute의 적용 범위를 정합니다:</p>
+                    <ul>
+                        <li><M>즉시 수정</M> 체크 + <M>Execute</M> → 재할당과 함께 preferred 리더를 <b>실제 리더로 즉시 선출</b>합니다. 리더만 불일치하면 변경분이 0이어도 처리됩니다. 실행 전 <b>리더 이동 경고</b>가 한 번 뜨고, <M>그래도 실행</M>을 다시 눌러야 적용됩니다 (연결된 producer/consumer가 잠깐 재연결될 수 있음).</li>
+                        <li><M>즉시 수정</M> 해제 + <M>Execute</M> → 재할당만 (preferred만 변경, 실제 리더는 다음 리밸런스/선출 때까지 그대로).</li>
+                        <li>선출은 해당 replica가 <b>ISR에 있어야 성공</b>합니다. ISR에 없으면 거부되고 사유가 표시됩니다 (다른 파티션은 계속 진행).</li>
                     </ul>
                     <p>진행 중인 토픽 옆에는 <M>⟳ N</M> 배지가 뜹니다 (FAST tick으로 자동 갱신).</p>
                 </>
@@ -481,12 +491,22 @@ function buildSectionsEn(): Section[] {
             body: (
                 <>
                     <p>Each partition row shows <b>RF chips</b> (broker numbers). The first chip is the <b>preferred leader</b>.</p>
+                    <p>The <b>Leader column shows the actual live leader</b> from the cluster. When it differs from the preferred replica (replica[0]) you'll see a <M>≠Bn</M> warning and a top <M>⚑ Leader mismatch</M> banner.</p>
                     <ul>
-                        <li><b>Drag chips</b> to reorder replicas (= leader change)</li>
-                        <li><b>Click a chip</b> → swap broker / remove this slot</li>
+                        <li><b>Drag chips</b> to reorder replicas = <b>change the preferred leader (reassignment)</b></li>
+                        <li><b>Click a chip</b> → swap broker</li>
+                        <li>Per-row <M>↺</M> → <b>reverts that row's edits only</b> (shown only when edited; runs nothing). For everything, use <b>Reset all</b> at the top</li>
                         <li><b>Show only changed rows</b> toggle for big topics</li>
-                        <li><b>Reset all</b> reverts every change in this dialog</li>
                         <li><M>Execute</M> sends <b>only changed partitions</b> to Kafka</li>
+                    </ul>
+                    <div style={{ background: "var(--warn-soft-bg)", border: "1px solid var(--warn)", borderRadius: 6, padding: "8px 12px", margin: "10px 0" }}>
+                        <b>Leader won't change?</b> A reassignment (Execute) that reorders replicas only sets the <b>preferred</b> leader. To move the actual leader you need a <b>preferred leader election</b>. If the replicas are already in the desired order the reassignment shows “0 changed” and does nothing.
+                    </div>
+                    <p>The <b>Apply immediately</b> checkbox (on by default) decides what Execute applies:</p>
+                    <ul>
+                        <li><M>Apply immediately</M> checked + <M>Execute</M> → along with the reassignment, <b>elect the preferred replica as the live leader now</b>. Works even when 0 replicas changed but the leader is mismatched. A <b>leader-move warning</b> appears once first — click <M>Run anyway</M> to confirm (connected producers/consumers may briefly reconnect).</li>
+                        <li><M>Apply immediately</M> unchecked + <M>Execute</M> → reassignment only (preferred changes, live leader stays until the next rebalance/election).</li>
+                        <li>The election <b>succeeds only if that replica is in the ISR</b>. Otherwise it's rejected and the reason is shown (other partitions still proceed).</li>
                     </ul>
                     <p>An <M>⟳ N</M> badge appears next to topics with reassignments in flight (auto-refreshed by the FAST tick).</p>
                 </>

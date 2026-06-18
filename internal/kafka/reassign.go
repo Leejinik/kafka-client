@@ -69,6 +69,81 @@ func (m *Manager) AlterPartitionAssignments(ctx context.Context, profileID, topi
 	return nil
 }
 
+// LeaderElectionResult is the per-partition outcome of a preferred leader
+// election. Failed is true with a Reason when Kafka rejected that partition
+// (e.g. the preferred replica is not in ISR, or it is already the leader).
+type LeaderElectionResult struct {
+	Partition int32  `json:"partition"`
+	Failed    bool   `json:"failed"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+// ElectPreferredLeaders triggers a preferred-leader election so the first
+// replica in each partition's replica list (the preferred leader) actually
+// becomes the live leader. This is distinct from reassignment: reordering the
+// replica list (AlterPartitionAssignments) only sets the *preferred* leader;
+// the controller does not move the live leader until an election runs (or
+// auto.leader.rebalance kicks in). When `partitions` is empty, every partition
+// of the topic is elected.
+//
+// Kafka reports "already the leader" as an error per partition; we surface it
+// as a non-fatal result rather than failing the whole call, so a topic-wide
+// election doesn't abort just because some partitions were already balanced.
+func (m *Manager) ElectPreferredLeaders(ctx context.Context, profileID, topic string, partitions []int32) ([]LeaderElectionResult, error) {
+	if topic == "" {
+		return nil, fmt.Errorf("topic is required")
+	}
+	c, err := m.Get(profileID)
+	if err != nil {
+		return nil, err
+	}
+
+	// When no partitions are given, resolve the full set ourselves so behaviour
+	// is unambiguous regardless of how the broker treats an empty list.
+	if len(partitions) == 0 {
+		mdCtx, mdCancel := context.WithTimeout(ctx, 10*time.Second)
+		defer mdCancel()
+		topics, err := c.adm.ListTopics(mdCtx, topic)
+		if err != nil {
+			return nil, fmt.Errorf("list topic: %w", err)
+		}
+		td, ok := topics[topic]
+		if !ok || td.Err != nil {
+			if ok && td.Err != nil {
+				return nil, fmt.Errorf("topic %s: %w", topic, td.Err)
+			}
+			return nil, fmt.Errorf("topic %s not found", topic)
+		}
+		for pid := range td.Partitions {
+			partitions = append(partitions, pid)
+		}
+	}
+	if len(partitions) == 0 {
+		return nil, nil
+	}
+
+	var set kadm.TopicsSet
+	set.Add(topic, partitions...)
+
+	electCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	results, err := c.adm.ElectLeaders(electCtx, kadm.ElectPreferredReplica, set)
+	if err != nil {
+		return nil, fmt.Errorf("elect leaders: %w", err)
+	}
+
+	out := make([]LeaderElectionResult, 0, len(partitions))
+	for _, pr := range results[topic] {
+		r := LeaderElectionResult{Partition: pr.Partition}
+		if pr.Err != nil {
+			r.Failed = true
+			r.Reason = pr.Err.Error()
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
 // ListPartitionReassignments returns currently in-flight reassignments for
 // every partition of the topic. Partitions with no active reassignment have
 // empty AddingReplicas / RemovingReplicas slices and are omitted from the

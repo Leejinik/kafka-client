@@ -191,6 +191,13 @@ func (a *App) ListPartitionReassignments(profileID, topic string) ([]kafka.Reass
 	return a.manager.ListPartitionReassignments(a.ctx, profileID, topic)
 }
 
+// ElectPreferredLeader runs a preferred-leader election for the given
+// partitions (all partitions of the topic when the list is empty), making each
+// partition's preferred replica (replica[0]) the live leader.
+func (a *App) ElectPreferredLeader(profileID, topic string, partitions []int32) ([]kafka.LeaderElectionResult, error) {
+	return a.manager.ElectPreferredLeaders(a.ctx, profileID, topic, partitions)
+}
+
 // --- Consumer-group admin -----------------------------------------------
 
 func (a *App) DeleteGroup(profileID, group string) error {

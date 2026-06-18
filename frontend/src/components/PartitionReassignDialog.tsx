@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     DndContext,
     DragEndEvent,
@@ -20,6 +20,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Lang, t } from "../lib/i18n";
 import { errString } from "../lib/errors";
 import {
+    ElectPreferredLeader,
     GetClusterInfo,
     GetTopicPartitions,
     ListPartitionReassignments,
@@ -38,6 +39,7 @@ interface Props {
 
 interface Row {
     partition: number;
+    leader: number;       // actual live leader from cluster metadata (-1 if none)
     original: number[];   // initial replica list (preferred leader = [0])
     current: number[];    // edited replica list
 }
@@ -45,7 +47,10 @@ interface Row {
 export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSubmitted }: Props) {
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
+    const [immediate, setImmediate] = useState(true); // "즉시 수정": Execute도 리더 선출까지
+    const [confirming, setConfirming] = useState(false); // 즉시 선출 전 1회 경고 확인
     const [err, setErr] = useState<string | null>(null);
+    const [notice, setNotice] = useState<string | null>(null);
     const [rows, setRows] = useState<Row[]>([]);
     const [brokers, setBrokers] = useState<number[]>([]);
     const [showChangedOnly, setShowChangedOnly] = useState(false);
@@ -54,40 +59,57 @@ export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSub
     // chip swap popover state
     const [swapAt, setSwapAt] = useState<{ partition: number; slot: number; x: number; y: number } | null>(null);
 
-    useEffect(() => {
-        let alive = true;
-        (async () => {
-            setLoading(true);
-            setErr(null);
-            try {
-                const [parts, cluster, infl] = await Promise.all([
-                    GetTopicPartitions(profileId, topic),
-                    GetClusterInfo(profileId),
-                    ListPartitionReassignments(profileId, topic).catch(() => [] as kafka.ReassignmentProgress[]),
-                ]);
-                if (!alive) return;
-                const rs: Row[] = parts
+    // Reload cluster state. preserveEdits keeps the user's pending replica edits
+    // (used after an election, which doesn't touch the replica list) but
+    // refreshes the live leader so the mismatch badges update.
+    const load = useCallback(async (preserveEdits = false) => {
+        setLoading(true);
+        setErr(null);
+        try {
+            const [parts, cluster, infl] = await Promise.all([
+                GetTopicPartitions(profileId, topic),
+                GetClusterInfo(profileId),
+                ListPartitionReassignments(profileId, topic).catch(() => [] as kafka.ReassignmentProgress[]),
+            ]);
+            setRows((prev) => {
+                const editByPart = new Map(prev.map((r) => [r.partition, r.current]));
+                return parts
                     .slice()
                     .sort((a, b) => a.partition - b.partition)
                     .map((p) => ({
                         partition: p.partition,
+                        leader: p.leader,
                         original: [...p.replicas],
-                        current: [...p.replicas],
+                        current: preserveEdits && editByPart.has(p.partition)
+                            ? [...editByPart.get(p.partition)!]
+                            : [...p.replicas],
                     }));
-                setRows(rs);
-                setBrokers(cluster.brokers.map((b) => b.nodeId).sort((a, b) => a - b));
-                setInflight(new Set(infl.map((r) => r.partition)));
-            } catch (e) {
-                if (alive) setErr(errString(e));
-            } finally {
-                if (alive) setLoading(false);
-            }
-        })();
-        return () => { alive = false; };
+            });
+            setBrokers(cluster.brokers.map((b) => b.nodeId).sort((a, b) => a - b));
+            setInflight(new Set(infl.map((r) => r.partition)));
+        } catch (e) {
+            setErr(errString(e));
+        } finally {
+            setLoading(false);
+        }
     }, [profileId, topic]);
+
+    useEffect(() => {
+        void load(false);
+    }, [load]);
 
     const changedRows = useMemo(
         () => rows.filter((r) => !arraysEqual(r.current, r.original)),
+        [rows],
+    );
+
+    // Partitions whose intended preferred leader (current[0], after any pending
+    // edits) is not the live leader. When "즉시 수정" is on, Execute runs a
+    // preferred-leader election for these so the leader actually moves now.
+    // This also covers the no-reassignment case (current[0] === original[0] but
+    // the live leader drifted), which reassignment alone can never fix.
+    const electTargets = useMemo(
+        () => rows.filter((r) => r.current.length > 0 && r.leader >= 0 && r.current[0] !== r.leader),
         [rows],
     );
 
@@ -132,16 +154,50 @@ export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSub
         setRows((rs) => rs.map((r) => ({ ...r, current: [...r.original] })));
     };
 
+    // Execute applies the pending reassignment (changed rows) and, when
+    // "즉시 수정" is checked, also runs a preferred-leader election so the live
+    // leader moves to the intended preferred replica right away. With it
+    // unchecked, only the reassignment is submitted (preferred set, leader
+    // unchanged until the next rebalance/election).
+    const canExecute = changedRows.length > 0 || (immediate && electTargets.length > 0);
+
+    const willElect = immediate && electTargets.length > 0;
+
     const handleExecute = async () => {
-        if (changedRows.length === 0) return;
+        if (!canExecute) return;
+        // 즉시 선출은 리더가 곧바로 이동해 연결이 잠깐 끊길 수 있으므로 1회 확인을 받는다.
+        if (willElect && !confirming) {
+            setConfirming(true);
+            return;
+        }
+        setConfirming(false);
         setBusy(true);
         setErr(null);
+        setNotice(null);
         try {
-            const payload = changedRows.map((r) => ({
-                partition: r.partition,
-                replicas: r.current,
-            }));
-            await ReassignPartitions(profileId, topic, payload as any);
+            if (changedRows.length > 0) {
+                const payload = changedRows.map((r) => ({
+                    partition: r.partition,
+                    replicas: r.current,
+                }));
+                await ReassignPartitions(profileId, topic, payload as any);
+            }
+
+            if (immediate && electTargets.length > 0) {
+                const results = await ElectPreferredLeader(
+                    profileId,
+                    topic,
+                    electTargets.map((r) => r.partition),
+                );
+                const fail = results.filter((r) => r.failed).length;
+                if (fail > 0) {
+                    // Some elections were rejected (e.g. preferred not in ISR).
+                    // Keep the dialog open, refresh, and surface the outcome.
+                    await load(false);
+                    setNotice(t(lang, "reassign.electResult", { ok: results.length - fail, fail }));
+                    return;
+                }
+            }
             onSubmitted();
         } catch (e) {
             setErr(errString(e));
@@ -165,13 +221,26 @@ export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSub
             onClose={busy ? undefined : onClose}
             footer={
                 <>
+                    <label className="checkbox" title={t(lang, "reassign.immediateTip")} style={{ marginRight: "auto" }}>
+                        <input
+                            type="checkbox"
+                            checked={immediate}
+                            onChange={(e) => { setImmediate(e.target.checked); setConfirming(false); }}
+                            disabled={busy}
+                        />
+                        {t(lang, "reassign.immediate")}
+                    </label>
                     <button onClick={onClose} disabled={busy}>{t(lang, "profile.cancel")}</button>
                     <button
-                        className="primary"
+                        className={confirming && willElect ? "danger" : "primary"}
                         onClick={handleExecute}
-                        disabled={busy || loading || changedRows.length === 0}
+                        disabled={busy || loading || !canExecute}
                     >
-                        {busy ? t(lang, "reassign.executing") : t(lang, "reassign.execute")}
+                        {busy
+                            ? t(lang, "reassign.executing")
+                            : confirming && willElect
+                                ? t(lang, "reassign.confirmRun")
+                                : t(lang, "reassign.execute")}
                     </button>
                 </>
             }
@@ -189,6 +258,11 @@ export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSub
                                         ⟳ {t(lang, "reassign.inflight.count", { n: inflight.size })}
                                     </span>
                                 )}
+                                {electTargets.length > 0 && (
+                                    <span style={{ color: "var(--warn)", fontWeight: 600 }}>
+                                        ⚑ {t(lang, "reassign.mismatch")}
+                                    </span>
+                                )}
                                 <div style={{ flex: 1 }} />
                                 <label className="checkbox">
                                     <input
@@ -203,12 +277,16 @@ export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSub
                                 </button>
                             </div>
 
+                            <div className="muted" style={{ fontSize: 11, lineHeight: 1.5 }}>
+                                {t(lang, "reassign.electNote")}
+                            </div>
+
                             <div style={{ border: "1px solid var(--border)", borderRadius: 6, overflow: "auto", maxHeight: "55vh" }}>
                                 <table className="inner-table">
                                     <thead>
                                         <tr>
                                             <th style={{ width: 80 }}>{t(lang, "reassign.partition")}</th>
-                                            <th style={{ width: 90 }}>{t(lang, "reassign.leader")}</th>
+                                            <th style={{ width: 130 }}>{t(lang, "reassign.leader")}</th>
                                             <th>{t(lang, "reassign.replicas")}</th>
                                             <th style={{ width: 70 }}></th>
                                         </tr>
@@ -225,6 +303,7 @@ export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSub
                                                 const changed = !arraysEqual(r.current, r.original);
                                                 const leaderChanged = r.current[0] !== r.original[0];
                                                 const isInflight = inflight.has(r.partition);
+                                                const mismatch = r.current.length > 0 && r.leader >= 0 && r.current[0] !== r.leader;
                                                 return (
                                                     <tr
                                                         key={r.partition}
@@ -237,8 +316,23 @@ export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSub
                                                             )}
                                                         </td>
                                                         <td className="mono" style={{ fontWeight: 600 }}>
-                                                            B{r.current[0]}
-                                                            {leaderChanged && <span style={{ marginLeft: 4, color: "var(--accent)" }}>✱</span>}
+                                                            {r.leader >= 0 ? `B${r.leader}` : "—"}
+                                                            {mismatch && (
+                                                                <span
+                                                                    title={t(lang, "reassign.mismatchTip")}
+                                                                    style={{ marginLeft: 4, color: "var(--warn)", fontWeight: 700 }}
+                                                                >
+                                                                    ≠B{r.current[0]}
+                                                                </span>
+                                                            )}
+                                                            {leaderChanged && (
+                                                                <span
+                                                                    title={t(lang, "reassign.preferred")}
+                                                                    style={{ marginLeft: 4, color: "var(--accent)" }}
+                                                                >
+                                                                    ✱
+                                                                </span>
+                                                            )}
                                                         </td>
                                                         <td>
                                                             <ReplicaChips
@@ -281,6 +375,21 @@ export function PartitionReassignDialog({ lang, profileId, topic, onClose, onSub
                         </>
                     )}
 
+                    {confirming && willElect && (
+                        <div
+                            style={{
+                                fontSize: 12,
+                                color: "var(--warn)",
+                                background: "var(--warn-soft-bg)",
+                                border: "1px solid var(--warn)",
+                                borderRadius: 6,
+                                padding: "8px 10px",
+                            }}
+                        >
+                            ⚠ {t(lang, "reassign.electConfirm", { n: electTargets.length })}
+                        </div>
+                    )}
+                    {notice && <div style={{ color: "var(--accent)", fontSize: 12 }}>{notice}</div>}
                     {err && <div style={{ color: "var(--danger)", fontSize: 12 }}>{err}</div>}
         </Modal>
 
