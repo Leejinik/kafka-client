@@ -404,11 +404,10 @@ function buildSectionsKo(): Section[] {
             title: "10. 자동 업데이트",
             body: (
                 <>
-                    <p>앱을 켤 때마다 GitHub Releases를 확인해 새 버전이 있으면 "업데이트가 있습니다" 다이얼로그가 뜹니다.</p>
+                    <p>앱을 켤 때마다 GitHub Releases를 확인해 새 버전이 있으면 <b>자동으로 조용히 업데이트</b>됩니다 — 따로 묻지 않습니다. 새 <M>kafka-client.exe</M>를 같은 폴더에 받아 두고, 작은 <M>update.cmd</M> 헬퍼가 앱이 종료된 직후 파일을 교체한 뒤 자동으로 다시 실행합니다. 시작 직후 "내려받는 중…" 토스트만 잠깐 보이고 곧 새 버전으로 재시작됩니다.</p>
                     <ul>
-                        <li><b>업데이트</b> — 새 <M>kafka-client.exe</M>를 같은 폴더에 받아 두고, 작은 <M>update.cmd</M> 헬퍼가 앱이 종료된 직후 파일을 교체한 뒤 자동으로 다시 실행합니다.</li>
-                        <li><b>나중에</b> — 그냥 현재 버전으로 계속 사용. 다음 실행 때 다시 묻습니다.</li>
                         <li>업데이트 직후 처음 켜질 때 <b>릴리즈 노트</b>가 한 번만 팝업됩니다 (확인을 누르면 두 번째부터는 안 뜸).</li>
+                        <li><b>설정 → 업데이트 확인</b>으로 수동 체크하면, 이때는 적용 전에 한 번 묻는 다이얼로그가 뜹니다.</li>
                     </ul>
                     <p><b>릴리즈는 태그 기반</b>입니다. <M>git tag vX.Y.Z && git push --tags</M>를 푸쉬하면 GitHub Actions가 Windows에서 <M>wails build</M>로 exe를 만들고, 이전 태그 이후의 커밋 메시지를 Release 본문에 자동으로 채워서 공개합니다.</p>
                     <Box kind="tip">
@@ -706,11 +705,10 @@ function buildSectionsEn(): Section[] {
             title: "10. Auto-update",
             body: (
                 <>
-                    <p>On every launch the app checks GitHub Releases for a newer version. If one exists you get an "Update available" prompt.</p>
+                    <p>On every launch the app checks GitHub Releases for a newer version and, if one exists, <b>updates silently</b> — no prompt. It downloads the new <M>kafka-client.exe</M> next to the current one; a tiny <M>update.cmd</M> helper waits for the app to exit, swaps the file, and re-launches it. You only see a brief "downloading…" toast at startup before it restarts on the new version.</p>
                     <ul>
-                        <li><b>Update</b> — downloads the new <M>kafka-client.exe</M> next to the current one. A tiny <M>update.cmd</M> helper waits for the app to exit, swaps the file, and re-launches it.</li>
-                        <li><b>Later</b> — keep the current build; you'll be asked again next launch.</li>
                         <li>The first time the freshly-updated binary runs, the <b>release notes</b> pop up once and only once (clicking OK dismisses them for good).</li>
+                        <li><b>Settings → Check for update</b> does a manual check, and that path still asks before applying.</li>
                     </ul>
                     <p><b>Releases are tag-driven.</b> Push <M>git tag vX.Y.Z && git push --tags</M> and GitHub Actions builds the exe on Windows via <M>wails build</M>, auto-fills the release body from commit messages since the previous tag, and publishes.</p>
                     <Box kind="tip">

@@ -11,6 +11,7 @@ import {
     IsConnected,
     ListProfiles,
     CheckForUpdate,
+    ApplyUpdate,
     GetPendingReleaseNotes,
     MarkReleaseNotesSeen,
 } from "../wailsjs/go/main/App";
@@ -182,7 +183,13 @@ export default function App() {
     useEffect(() => { void refreshProfiles(); }, []);
 
     // Startup: show release notes from the previous update (if any), then
-    // check GitHub for a newer release and prompt.
+    // check GitHub for a newer release. If one is available we apply it
+    // SILENTLY — no prompt: download, swap, relaunch. The new binary shows the
+    // stashed release notes once on its next launch. This is the "just works"
+    // delivery channel (no announcement email needed): opening the app is
+    // enough to pull the latest build. The manual "check for update" button in
+    // Settings still routes through the prompt dialog, since that's an explicit
+    // user action where asking first is the right call.
     useEffect(() => {
         let cancelled = false;
         (async () => {
@@ -197,11 +204,15 @@ export default function App() {
             try {
                 const info = await CheckForUpdate();
                 if (!cancelled && info?.available) {
-                    setUpdateInfo(info);
+                    // Briefly tell the user, then hand off. ApplyUpdate stashes
+                    // the notes, spawns the swap helper, and quits — the window
+                    // closes and reopens on the new version on its own.
+                    setToast(t(lang, "update.auto.toast", { latest: info.latestVersion }));
+                    await ApplyUpdate(info);
                 }
             } catch {
-                // Network error / API hiccup — silently skip; the user can
-                // upgrade manually next time.
+                // Network error / API hiccup / download failure — silently skip;
+                // we'll retry on the next launch.
             }
         })();
         return () => {
