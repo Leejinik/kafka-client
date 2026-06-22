@@ -20,11 +20,17 @@ func applyPlatform(exePath, newPath string) error {
 		return fmt.Errorf("write helper: %w", err)
 	}
 	cmd := exec.Command("cmd.exe", "/C", helper)
-	// DETACHED_PROCESS | CREATE_NO_WINDOW — keep the helper alive after we
-	// exit and don't pop a console window.
+	// CREATE_NO_WINDOW only. Do NOT add DETACHED_PROCESS: the two flags are
+	// mutually exclusive, and DETACHED_PROCESS *wins*, leaving the helper with
+	// no console at all. Every external console command it then spawns in the
+	// loop (`ping`) allocates its own brand-new console window — which flashes
+	// up once per iteration (up to ~120 times) and looks like an endless cmd
+	// flicker. CREATE_NO_WINDOW gives cmd a hidden console that `ping` inherits,
+	// so nothing is shown. The helper still outlives us: on Windows a child is
+	// not killed when the parent exits, and we Release() it below.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,
-		CreationFlags: 0x00000008 | 0x08000000,
+		CreationFlags: 0x08000000,
 	}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("launch helper: %w", err)
