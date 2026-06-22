@@ -355,8 +355,10 @@ function buildSectionsKo(): Section[] {
                         <li><b>최대 속도 (부하 테스트)</b> — 가능한 한 빠르게 비동기 발행. 종료 조건은 <M>건수 도달</M> 또는 <M>시간 경과</M></li>
                         <li><b>간격 발행</b> — N <M>ms</M>/<M>초</M>마다 1건. 총 건수 <M>0 = 무한</M>. 컨슈머 트리거 / 흐름 확인용</li>
                         <li>다이얼로그를 닫으면 자동 중지. 진행 중에는 <b>발행 / 실패 / 속도 / 경과 / 마지막 에러</b>가 200ms 간격으로 갱신</li>
+                        <li><b>프로듀서 튜닝 (성능 테스트)</b> — 체크하면 <M>compression.type</M> / <M>acks</M> / <M>batch.size(KB)</M> / <M>linger.ms</M> / <M>buffer.memory(MB)</M>를 바꿔가며 최대 처리량을 측정. 이 설정으로 <b>전용 프로듀서</b>를 따로 띄우므로 조회/관리용 공유 연결은 영향 없음. 끄면 기본값(무압축). <M>acks=all</M>은 멱등 프로듀서 유지, 그 외(1/0)는 멱등 자동 해제</li>
                     </ul>
                     <p className="muted" style={{ fontSize: 12 }}>탭을 바꾸거나 클러스터를 끊어도 백엔드 loop는 계속 돌 수 있습니다 — 다이얼로그를 닫는 것이 안전한 정지 방법.</p>
+                    <p className="muted" style={{ fontSize: 12 }}>팁: 숫자 문자열 값은 압축률이 높아 zstd/lz4를 켜면 네트워크 대비 처리량이 크게 오릅니다. batch.size↑·linger.ms↑는 처리량↑(지연↑), acks=1·0은 처리량↑(안정성↓).</p>
                 </>
             ),
         },
@@ -656,8 +658,10 @@ function buildSectionsEn(): Section[] {
                         <li><b>Max throughput (load test)</b> — async firehose. Stop on <M>count reached</M> or <M>duration elapsed</M></li>
                         <li><b>Interval</b> — one message every N <M>ms</M>/<M>s</M>; total count <M>0 = unlimited</M>. Good for triggering consumers</li>
                         <li>Closing the dialog auto-stops. While running: <b>sent / failed / rate / elapsed / last error</b> refresh every 200ms</li>
+                        <li><b>Producer tuning (perf test)</b> — tick it to sweep <M>compression.type</M> / <M>acks</M> / <M>batch.size(KB)</M> / <M>linger.ms</M> / <M>buffer.memory(MB)</M> and measure max throughput. A <b>dedicated producer</b> is spun up with these settings, so the shared browse/admin connection is untouched. Off = default (no compression). <M>acks=all</M> keeps the idempotent producer; 1/0 disable idempotency automatically</li>
                     </ul>
                     <p className="muted" style={{ fontSize: 12 }}>The backend loop can keep running after switching tabs or disconnecting — closing the dialog is the safe way to stop it.</p>
+                    <p className="muted" style={{ fontSize: 12 }}>Tip: numeric-string values compress well, so zstd/lz4 lifts throughput a lot vs. the network. Bigger batch.size / linger.ms → higher throughput (more latency); acks=1/0 → higher throughput (less durability).</p>
                 </>
             ),
         },

@@ -40,6 +40,15 @@ export function LoopProduceDialog({
     const [intervalValue, setIntervalValue] = useState("1");
     const [intervalUnit, setIntervalUnit] = useState<"ms" | "s">("s");
     const [intervalCount, setIntervalCount] = useState("0"); // 0 = unlimited
+
+    // Producer tuning (load test). Off by default → uses the shared client.
+    const [useTuning, setUseTuning] = useState(false);
+    const [tnCompression, setTnCompression] = useState<"none" | "gzip" | "snappy" | "lz4" | "zstd">("zstd");
+    const [tnAcks, setTnAcks] = useState<"leader" | "all" | "none">("leader");
+    const [tnBatchKB, setTnBatchKB] = useState("128"); // batch.size in KB
+    const [tnLingerMs, setTnLingerMs] = useState("10"); // linger.ms
+    const [tnBufferMB, setTnBufferMB] = useState("256"); // buffer.memory in MB
+
     const [status, setStatus] = useState<kafka.LoopProduceStatus | null>(null);
     const [err, setErr] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
@@ -99,6 +108,15 @@ export function LoopProduceDialog({
                     mode === "max" && maxStop === "duration"
                         ? Math.max(0, Number(maxDurationSec) || 0) * 1000
                         : 0,
+                tuning: useTuning
+                    ? {
+                          batchMaxBytes: Math.max(0, Number(tnBatchKB) || 0) * 1024,
+                          lingerMs: Math.max(0, Number(tnLingerMs) || 0),
+                          compression: tnCompression,
+                          acks: tnAcks,
+                          maxBufferedBytes: Math.max(0, Number(tnBufferMB) || 0) * 1024 * 1024,
+                      }
+                    : undefined,
             };
 
             await StartLoopProduce(profileId, opts as any);
@@ -256,6 +274,90 @@ export function LoopProduceDialog({
                             </div>
                         </div>
                     )}
+
+                    <div className="form-row">
+                        <label className="checkbox" style={{ cursor: "pointer" }}>
+                            <input
+                                type="checkbox"
+                                checked={useTuning}
+                                onChange={(e) => setUseTuning(e.target.checked)}
+                                disabled={isRunning}
+                            />
+                            {t(lang, "loop.tuning")}
+                        </label>
+                        {useTuning && (
+                            <div
+                                style={{
+                                    marginTop: 8,
+                                    padding: 12,
+                                    border: "1px solid var(--border)",
+                                    borderRadius: 6,
+                                    display: "grid",
+                                    gridTemplateColumns: "auto 1fr",
+                                    gap: "8px 10px",
+                                    alignItems: "center",
+                                }}
+                            >
+                                <label className="muted" style={{ fontSize: 12 }}>compression.type</label>
+                                <select
+                                    value={tnCompression}
+                                    onChange={(e) => setTnCompression(e.target.value as any)}
+                                    disabled={isRunning}
+                                >
+                                    <option value="none">none</option>
+                                    <option value="gzip">gzip</option>
+                                    <option value="snappy">snappy</option>
+                                    <option value="lz4">lz4</option>
+                                    <option value="zstd">zstd</option>
+                                </select>
+
+                                <label className="muted" style={{ fontSize: 12 }}>acks</label>
+                                <select
+                                    value={tnAcks}
+                                    onChange={(e) => setTnAcks(e.target.value as any)}
+                                    disabled={isRunning}
+                                >
+                                    <option value="leader">1 (leader)</option>
+                                    <option value="all">all (-1)</option>
+                                    <option value="none">0 (none)</option>
+                                </select>
+
+                                <label className="muted" style={{ fontSize: 12 }}>batch.size (KB)</label>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    value={tnBatchKB}
+                                    onChange={(e) => setTnBatchKB(e.target.value)}
+                                    disabled={isRunning}
+                                    style={{ width: 120 }}
+                                />
+
+                                <label className="muted" style={{ fontSize: 12 }}>linger.ms</label>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    value={tnLingerMs}
+                                    onChange={(e) => setTnLingerMs(e.target.value)}
+                                    disabled={isRunning}
+                                    style={{ width: 120 }}
+                                />
+
+                                <label className="muted" style={{ fontSize: 12 }}>buffer.memory (MB)</label>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    value={tnBufferMB}
+                                    onChange={(e) => setTnBufferMB(e.target.value)}
+                                    disabled={isRunning}
+                                    style={{ width: 120 }}
+                                />
+
+                                <span className="muted" style={{ gridColumn: "1 / -1", fontSize: 11 }}>
+                                    {t(lang, "loop.tuning.hint")}
+                                </span>
+                            </div>
+                        )}
+                    </div>
 
                     <div
                         style={{
