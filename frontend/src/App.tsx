@@ -149,6 +149,9 @@ export default function App() {
     // Shared topic state between Consume and Produce pages: selecting a topic
     // on one auto-selects on the other.
     const [sharedTopic, setSharedTopic] = useState<string>("");
+    // Bumped whenever topics are created/edited/deleted in the Topics tab so the
+    // Consume/Produce topic lists refresh live, without a disconnect/reconnect.
+    const [topicsRev, setTopicsRev] = useState(0);
 
     // Sidebar context menu.
     const [sidebarCtx, setSidebarCtx] = useState<{ x: number; y: number; profile: profile.Profile } | null>(null);
@@ -513,6 +516,7 @@ export default function App() {
                                     profileId={selected.id}
                                     active={tab === "topics"}
                                     onTick={() => void fetchClusterInfo(selected.id)}
+                                    onTopicsChanged={() => setTopicsRev((v) => v + 1)}
                                 />
                             </TabPanel>
                             <TabPanel active={tab === "consume"}>
@@ -523,6 +527,7 @@ export default function App() {
                                     defaultTopic={selected.defaultTopic}
                                     topic={sharedTopic}
                                     onTopicChange={setSharedTopic}
+                                    topicsRev={topicsRev}
                                 />
                             </TabPanel>
                             <TabPanel active={tab === "produce"}>
@@ -533,6 +538,7 @@ export default function App() {
                                     defaultTopic={selected.defaultTopic}
                                     topic={sharedTopic}
                                     onTopicChange={setSharedTopic}
+                                    topicsRev={topicsRev}
                                 />
                             </TabPanel>
                         </>

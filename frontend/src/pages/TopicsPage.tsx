@@ -26,6 +26,9 @@ interface Props {
     // background.
     active?: boolean;
     onTick?: () => void; // fired every 10s; parent can refresh cluster-level data
+    // Fired right after a topic is created/edited/deleted here, so the parent
+    // can refresh the Consume/Produce topic lists without a reconnect.
+    onTopicsChanged?: () => void;
 }
 
 // Two-tier polling for the Topics tab.
@@ -122,7 +125,7 @@ type Dialog =
     | { kind: "groupDelete"; group: string }
     | { kind: "groupReset"; group: kafka.GroupView; topic: string };
 
-export function TopicsPage({ lang, profileId, active = true, onTick }: Props) {
+export function TopicsPage({ lang, profileId, active = true, onTick, onTopicsChanged }: Props) {
     const [topics, setTopics] = useState<kafka.TopicSummary[]>([]);
     const [search, setSearch] = useState("");
     const [loading, setLoading] = useState(false);
@@ -440,7 +443,7 @@ export function TopicsPage({ lang, profileId, active = true, onTick }: Props) {
                     lang={lang}
                     profileId={profileId}
                     onClose={() => setDialog({ kind: "none" })}
-                    onCreated={() => { setDialog({ kind: "none" }); void refresh(); }}
+                    onCreated={() => { setDialog({ kind: "none" }); void refresh(); onTopicsChanged?.(); }}
                 />
             )}
             {dialog.kind === "edit" && (
@@ -449,7 +452,7 @@ export function TopicsPage({ lang, profileId, active = true, onTick }: Props) {
                     profileId={profileId}
                     topic={dialog.topic}
                     onClose={() => setDialog({ kind: "none" })}
-                    onSaved={() => { setDialog({ kind: "none" }); void refresh(); }}
+                    onSaved={() => { setDialog({ kind: "none" }); void refresh(); onTopicsChanged?.(); }}
                 />
             )}
             {dialog.kind === "delete" && (
@@ -458,7 +461,7 @@ export function TopicsPage({ lang, profileId, active = true, onTick }: Props) {
                     profileId={profileId}
                     topic={dialog.topic}
                     onClose={() => setDialog({ kind: "none" })}
-                    onDeleted={() => { setDialog({ kind: "none" }); void refresh(); }}
+                    onDeleted={() => { setDialog({ kind: "none" }); void refresh(); onTopicsChanged?.(); }}
                 />
             )}
             {dialog.kind === "reassign" && (

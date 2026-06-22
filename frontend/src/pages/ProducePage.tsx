@@ -14,6 +14,9 @@ interface Props {
     defaultTopic?: string;
     topic: string;
     onTopicChange: (topic: string) => void;
+    // Bumped by the parent whenever topics are created/edited/deleted in the
+    // Topics tab, so the topic list here refreshes without a reconnect.
+    topicsRev?: number;
 }
 
 function prettifyJson(s: string): string {
@@ -40,7 +43,7 @@ function parseHeaders(text: string): Record<string, string> {
     return out;
 }
 
-export function ProducePage({ lang, profileId, defaultTopic, topic, onTopicChange }: Props) {
+export function ProducePage({ lang, profileId, defaultTopic, topic, onTopicChange, topicsRev }: Props) {
     const [topics, setTopics] = useState<string[]>([]);
     const [partition, setPartition] = useState<number>(-1);
     const [key, setKey] = useState("");
@@ -81,7 +84,7 @@ export function ProducePage({ lang, profileId, defaultTopic, topic, onTopicChang
             }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [profileId]);
+    }, [profileId, topicsRev]);
 
     const handleSend = async () => {
         if (!topic) return;

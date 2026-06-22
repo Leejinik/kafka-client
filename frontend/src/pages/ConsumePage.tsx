@@ -32,6 +32,9 @@ interface Props {
     defaultTopic?: string;
     topic: string;
     onTopicChange: (topic: string) => void;
+    // Bumped by the parent whenever topics are created/edited/deleted in the
+    // Topics tab, so the topic list here refreshes without a reconnect.
+    topicsRev?: number;
 }
 
 type Mode = "beginning" | "end" | "offsetAfter" | "offsetBefore" | "timestamp" | "tail";
@@ -89,7 +92,7 @@ const CARD_COLORS: CardColor[] = [
     { chipBg: "rgba(147, 51, 234, 0.16)", chipBorder: "rgba(147, 51, 234, 0.55)", chipFg: "#9333ea", rowBg: "rgba(147, 51, 234, 0.12)" },
 ];
 
-export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChange }: Props) {
+export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChange, topicsRev }: Props) {
     const [topics, setTopics] = useState<string[]>([]);
     const [mode, setMode] = useState<Mode>(DEFAULT_MODE);
     const [offset, setOffset] = useState<string>("0");
@@ -313,7 +316,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
             }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [profileId]);
+    }, [profileId, topicsRev]);
 
     // Pagination kind for this render. "timestamp" uses ConsumeRange + a real
     // total count; "cursor" uses Consume + per-partition cursors and is what
