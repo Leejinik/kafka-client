@@ -282,6 +282,15 @@ function buildSectionsKo(): Section[] {
                         <li><b>Ctrl + C</b> (이스터에그) → SIGINT처럼 tail 종료. 텍스트 선택 중이거나 입력창 포커스 시엔 일반 복사로 동작</li>
                     </ul>
 
+                    <p><b>liz.message.pipeline 필터</b> — 토픽으로 <M>liz.message.pipeline</M>을 고르면 검색줄 아래에 <b>필드 인지 필터 패널</b>이 뜹니다 (다른 토픽에선 숨김). tail -f로 흘려두고 원하는 메시지만 골라 볼 때 유용합니다.</p>
+                    <ul>
+                        <li><b>필드별 포함/제외 토글</b> — <M>protocolCode</M> / <M>lizMessageType</M> / <M>senderType</M> / <M>senderId</M> / <M>lizUserId</M> / <M>alarmId</M> 각각 [포함] 또는 [제외] 모드로 값 다중선택. 필드 간에는 <b>AND</b>, 자유 텍스트 검색과도 AND로 조합</li>
+                        <li><b>하이브리드 선택지</b> — 값 목록은 liz 소스에서 뽑은 정적 카탈로그(protocolCode 92종 등) + 현재 버퍼에서 관측된 값을 합쳐 제공하고, 각 값 옆에 <b>관측 건수</b>를 표시. 아직 안 나온 값(예: 특정 senderId 숫자)도 검색창에 입력 후 Enter로 추가 가능</li>
+                        <li><b>(없음/null)</b> — <M>senderType</M>이 비어 있는 메시지(MODULE_STARTED/STOPPED 등)나 <M>lizUserId</M>=null을 잡으려면 이 옵션 선택</li>
+                        <li><b>화면 표시 필터</b> — 메시지는 전량 보관하고 표시에만 적용. 필터를 바꾸면 이미 받은 메시지에도 소급 반영되고, 가져오기 옆 카운트에도 그대로 반영됨</li>
+                        <li>설정은 localStorage에 저장되어 재시작 후에도 유지, 패널 헤더의 <b>전체 초기화</b>로 한 번에 해제</li>
+                    </ul>
+
                     <p><b>가져오기 / 중단</b> — 일반 조회 중에도 결과가 다 차기 전에 <b>중단</b> 버튼으로 취소 가능. 그때까지 모은 메시지가 그리드에 표시됩니다.</p>
 
                     <p><b>가져오기 옆 카운트</b> <M>{"{shown} / {total} 건"}</M> — 가져온 총 건수와 (검색/고급검색 시) 필터 후 표시 건수. limit이 1000이어도 989건만 있으면 989로 표시.</p>
@@ -583,6 +592,15 @@ function buildSectionsEn(): Section[] {
                         <li><b>Mouse wheel</b> → pauses follow, freezes at that position</li>
                         <li><b>Shift + G</b> → snaps back to bottom and resumes follow</li>
                         <li><b>Ctrl + C</b> (easter egg) → stops tail like SIGINT. When text is selected or an input has focus it falls back to normal copy</li>
+                    </ul>
+
+                    <p><b>liz.message.pipeline filter</b> — pick <M>liz.message.pipeline</M> as the topic and a <b>field-aware filter panel</b> appears below the search bar (hidden for other topics). Handy for keeping a tail -f running and only watching the messages you care about.</p>
+                    <ul>
+                        <li><b>Per-field include/exclude toggle</b> — multi-select values on <M>protocolCode</M> / <M>lizMessageType</M> / <M>senderType</M> / <M>senderId</M> / <M>lizUserId</M> / <M>alarmId</M>, each in [Include] or [Exclude] mode. Fields combine with <b>AND</b>, and also AND with the free-text search</li>
+                        <li><b>Hybrid options</b> — the value list merges a static catalog pulled from the liz source (e.g. 92 protocolCodes) with values observed in the current buffer, each showing its <b>observed count</b>. Values not yet seen (e.g. a specific senderId number) can be typed into the search box and added with Enter</li>
+                        <li><b>(none/null)</b> — pick this to match messages whose <M>senderType</M> is empty (MODULE_STARTED/STOPPED, etc.) or <M>lizUserId</M>=null</li>
+                        <li><b>View-layer filter</b> — every message is kept; the filter only affects display. Changing it re-evaluates already-received messages and updates the count pill next to Fetch</li>
+                        <li>Settings persist in localStorage across restarts; <b>Clear all</b> in the panel header resets everything at once</li>
                     </ul>
 
                     <p><b>Fetch / Cancel</b> — for ordinary fetches you can also cancel mid-way with the <b>Cancel</b> button; whatever was collected so far still shows in the grid.</p>

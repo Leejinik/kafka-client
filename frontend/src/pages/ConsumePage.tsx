@@ -16,6 +16,20 @@ import { ContextMenu } from "../components/ContextMenu";
 import { SaveMessageDialog } from "../components/SaveMessageDialog";
 import { TimestampConverter } from "../components/TimestampConverter";
 import { formatLocalHuman, withMsTooltips } from "../lib/formatTime";
+import { LizFilterPanel } from "../components/LizFilterPanel";
+import {
+    computeFacetCounts,
+    emptyLizFilterState,
+    FacetCounts,
+    filterCatalogFor,
+    isLizFilterActive,
+    LIZ_FIELDS,
+    LizFields,
+    LizFilterState,
+    matchLizFilter,
+    normalizeLizFilterState,
+    parseLizFields,
+} from "../lib/lizPipeline";
 
 const COLUMNS: ColumnDef[] = [
     { key: "idx",       label: "#",         defaultWidth: 56,  minWidth: 40 },
@@ -64,6 +78,8 @@ type TsFormat = "local" | "unix";
 
 const ROW_HEIGHT = 28;
 const TS_FORMAT_KEY = "consume.tsFormat";
+const LIZ_FILTER_KEY = "kfc.consume.lizFilter";
+const LIZ_FILTER_OPEN_KEY = "kfc.consume.lizFilterOpen";
 
 // Discrete pagination unit. Used by both the timestamp ConsumeRange path and
 // the cursor-based Consume path so the user can pre-size each page for
@@ -192,6 +208,49 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     const { widths, setWidth, resetWidth } = useColumnWidths("kfc.consume.colWidths", COLUMNS);
     const fixedColsWidth = COLUMNS.filter((c) => !c.grow).reduce((sum, c) => sum + widths[c.key], 0);
     const preview = useResizableWidth("kfc.consume.previewWidth", 380);
+
+    // --- liz.message.pipeline structured filter (whitelist/blacklist) --------
+    // A field-aware include/exclude filter shown only for topics that have a
+    // registered catalog (currently only liz.message.pipeline). It composes
+    // (AND) with the free-text search below and applies at the view layer, so
+    // the full tail buffer is retained and filter changes re-evaluate history.
+    const [lizFilter, setLizFilter] = useState<LizFilterState>(() => {
+        try {
+            const raw = localStorage.getItem(LIZ_FILTER_KEY);
+            return normalizeLizFilterState(raw ? JSON.parse(raw) : null, LIZ_FIELDS);
+        } catch {
+            return emptyLizFilterState(LIZ_FIELDS);
+        }
+    });
+    useEffect(() => {
+        localStorage.setItem(LIZ_FILTER_KEY, JSON.stringify(lizFilter));
+    }, [lizFilter]);
+    const [lizFilterOpen, setLizFilterOpen] = useState<boolean>(
+        () => localStorage.getItem(LIZ_FILTER_OPEN_KEY) !== "0",
+    );
+    useEffect(() => {
+        localStorage.setItem(LIZ_FILTER_OPEN_KEY, lizFilterOpen ? "1" : "0");
+    }, [lizFilterOpen]);
+
+    // Structured-filter catalog for the current topic (null → hide the panel).
+    const lizCatalog = useMemo(() => filterCatalogFor(topic), [topic]);
+    // Per-message parsed-field cache keyed by partition-offset identity, reset
+    // whenever the topic changes. Keeps JSON.parse to once-per-message even as
+    // the tail buffer grows (facets/filter re-run are then plain O(n) lookups).
+    const lizCacheRef = useRef<{ topic: string; cache: Map<string, LizFields | null> }>({ topic: "", cache: new Map() });
+    if (lizCacheRef.current.topic !== topic) {
+        lizCacheRef.current = { topic, cache: new Map() };
+    }
+    const getLizFields = (m: kafka.Message): LizFields | null => {
+        if (!lizCatalog) return null;
+        const k = `${m.partition}-${m.offset}`;
+        const c = lizCacheRef.current.cache;
+        const hit = c.get(k);
+        if (hit !== undefined) return hit;
+        const parsed = parseLizFields(m.value, lizCatalog.fields);
+        c.set(k, parsed);
+        return parsed;
+    };
 
     // Tail -f event subscription. One subscription per profile lifetime.
     useEffect(() => {
@@ -414,33 +473,47 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         [searchCards],
     );
 
+    // Live per-field value → count over the current buffer, feeding the hybrid
+    // (static catalog ∪ observed) dropdown in the liz filter panel.
+    const lizFacets = useMemo<FacetCounts>(() => {
+        if (!lizCatalog) return {};
+        return computeFacetCounts(messages.map(getLizFields), lizCatalog.fields);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [messages, lizCatalog]);
+
     const filtered = useMemo(() => {
+        const lizDefs = lizCatalog?.fields;
+        const lizActive = !!lizDefs && isLizFilterActive(lizFilter);
+        // Applies the structured liz filter (AND-composed with text search).
+        const applyLiz = (arr: kafka.Message[]) =>
+            lizActive ? arr.filter((m) => matchLizFilter(getLizFields(m), lizFilter, lizDefs!)) : arr;
+
         if (advancedSearch) {
             const active = lowerCardTokens.filter((tks) => tks.length > 0);
             // No active card → show full fetch result, same as exiting advanced mode.
-            if (active.length === 0) return sortedMessages;
-            return sortedMessages.filter((m) => {
+            if (active.length === 0) return applyLiz(sortedMessages);
+            return applyLiz(sortedMessages.filter((m) => {
                 const h = haystackOf(m).toLowerCase();
                 return active.some((tokens) => tokens.every((t) => h.includes(t)));
-            });
+            }));
         }
         const q = search.trim();
-        if (!q) return sortedMessages;
+        if (!q) return applyLiz(sortedMessages);
         let matcher: (s: string) => boolean;
         if (useRegex) {
             try {
                 const re = new RegExp(q, caseSensitive ? "" : "i");
                 matcher = (s) => re.test(s);
             } catch {
-                return sortedMessages;
+                return applyLiz(sortedMessages);
             }
         } else {
             const needle = caseSensitive ? q : q.toLowerCase();
             matcher = (s) => (caseSensitive ? s : s.toLowerCase()).includes(needle);
         }
-        return sortedMessages.filter((m) => matcher(haystackOf(m)));
+        return applyLiz(sortedMessages.filter((m) => matcher(haystackOf(m))));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [advancedSearch, sortedMessages, search, useRegex, caseSensitive, target, lowerCardTokens]);
+    }, [advancedSearch, sortedMessages, search, useRegex, caseSensitive, target, lowerCardTokens, lizCatalog, lizFilter]);
 
     // Per-card match counts. A card with no tokens reports 0.
     const cardCounts = useMemo(() => {
@@ -1139,6 +1212,18 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                     </>
                 )}
             </div>
+
+            {lizCatalog && (
+                <LizFilterPanel
+                    fields={lizCatalog.fields}
+                    state={lizFilter}
+                    onChange={setLizFilter}
+                    facets={lizFacets}
+                    lang={lang}
+                    open={lizFilterOpen}
+                    onToggleOpen={() => setLizFilterOpen((o) => !o)}
+                />
+            )}
 
             {error && <div style={{ color: "var(--danger)" }}>{error}</div>}
 
