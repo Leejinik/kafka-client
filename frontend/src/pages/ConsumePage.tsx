@@ -18,17 +18,19 @@ import { TimestampConverter } from "../components/TimestampConverter";
 import { formatLocalHuman, withMsTooltips } from "../lib/formatTime";
 import { LizFilterPanel } from "../components/LizFilterPanel";
 import {
-    computeFacetCounts,
+    computeEnumFacets,
+    computeKeyFacets,
+    computeObservedKeys,
     emptyLizFilterState,
     FacetCounts,
     filterCatalogFor,
     isLizFilterActive,
     LIZ_FIELDS,
-    LizFields,
     LizFilterState,
+    LizObject,
     matchLizFilter,
     normalizeLizFilterState,
-    parseLizFields,
+    parseLizObject,
 } from "../lib/lizPipeline";
 
 const COLUMNS: ColumnDef[] = [
@@ -237,17 +239,17 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     // Per-message parsed-field cache keyed by partition-offset identity, reset
     // whenever the topic changes. Keeps JSON.parse to once-per-message even as
     // the tail buffer grows (facets/filter re-run are then plain O(n) lookups).
-    const lizCacheRef = useRef<{ topic: string; cache: Map<string, LizFields | null> }>({ topic: "", cache: new Map() });
+    const lizCacheRef = useRef<{ topic: string; cache: Map<string, LizObject | null> }>({ topic: "", cache: new Map() });
     if (lizCacheRef.current.topic !== topic) {
         lizCacheRef.current = { topic, cache: new Map() };
     }
-    const getLizFields = (m: kafka.Message): LizFields | null => {
+    const getLizObject = (m: kafka.Message): LizObject | null => {
         if (!lizCatalog) return null;
         const k = `${m.partition}-${m.offset}`;
         const c = lizCacheRef.current.cache;
         const hit = c.get(k);
         if (hit !== undefined) return hit;
-        const parsed = parseLizFields(m.value, lizCatalog.fields);
+        const parsed = parseLizObject(m.value);
         c.set(k, parsed);
         return parsed;
     };
@@ -473,20 +475,37 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         [searchCards],
     );
 
-    // Live per-field value → count over the current buffer, feeding the hybrid
-    // (static catalog ∪ observed) dropdown in the liz filter panel.
-    const lizFacets = useMemo<FacetCounts>(() => {
-        if (!lizCatalog) return {};
-        return computeFacetCounts(messages.map(getLizFields), lizCatalog.fields);
+    // Parsed root objects for the current buffer (cache-backed, liz topic only).
+    const lizObjects = useMemo<(LizObject | null)[]>(() => {
+        if (!lizCatalog) return [];
+        return messages.map(getLizObject);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [messages, lizCatalog]);
+    // Enum-field value → count (hybrid dropdown for protocolCode/type/senderType).
+    const lizEnumFacets = useMemo<FacetCounts>(
+        () => (lizCatalog ? computeEnumFacets(lizObjects, lizCatalog.fields) : {}),
+        [lizObjects, lizCatalog],
+    );
+    // Observed key names (top-level + header) for custom-rule autocomplete.
+    const lizObservedKeys = useMemo<string[]>(() => {
+        const counts = computeObservedKeys(lizObjects);
+        return Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
+    }, [lizObjects]);
+    // Per-custom-key value → count, computed only for keys currently in use.
+    const lizCustomKeys = lizFilter.custom.map((r) => r.key.trim()).filter(Boolean);
+    const lizCustomFacets = useMemo<FacetCounts>(() => {
+        const out: FacetCounts = {};
+        for (const k of lizCustomKeys) if (!(k in out)) out[k] = computeKeyFacets(lizObjects, k);
+        return out;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lizObjects, lizCustomKeys.join("")]);
 
     const filtered = useMemo(() => {
         const lizDefs = lizCatalog?.fields;
         const lizActive = !!lizDefs && isLizFilterActive(lizFilter);
         // Applies the structured liz filter (AND-composed with text search).
         const applyLiz = (arr: kafka.Message[]) =>
-            lizActive ? arr.filter((m) => matchLizFilter(getLizFields(m), lizFilter, lizDefs!)) : arr;
+            lizActive ? arr.filter((m) => matchLizFilter(getLizObject(m), lizFilter, lizDefs!)) : arr;
 
         if (advancedSearch) {
             const active = lowerCardTokens.filter((tks) => tks.length > 0);
@@ -1218,7 +1237,9 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                     fields={lizCatalog.fields}
                     state={lizFilter}
                     onChange={setLizFilter}
-                    facets={lizFacets}
+                    enumFacets={lizEnumFacets}
+                    observedKeys={lizObservedKeys}
+                    customFacets={lizCustomFacets}
                     lang={lang}
                     open={lizFilterOpen}
                     onToggleOpen={() => setLizFilterOpen((o) => !o)}

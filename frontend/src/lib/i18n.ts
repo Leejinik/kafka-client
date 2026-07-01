@@ -320,9 +320,11 @@ const ko: Dict = {
     "liz.field.protocolCode": "프로토콜코드",
     "liz.field.lizMessageType": "메시지타입",
     "liz.field.senderType": "발신자타입",
-    "liz.field.senderId": "발신자ID",
-    "liz.field.lizUserId": "사용자ID",
-    "liz.field.alarmId": "알람ID",
+    "liz.custom.title": "커스텀 키/값",
+    "liz.custom.help": "키는 header·최상위 자동 탐색(점 경로 가능), 배열은 원소 매칭",
+    "liz.custom.add": "규칙 추가",
+    "liz.custom.remove": "규칙 삭제",
+    "liz.custom.keyPlaceholder": "키 (예: alarmId, deviceIds, senderId)",
 };
 
 const en: Dict = {
@@ -645,9 +647,11 @@ const en: Dict = {
     "liz.field.protocolCode": "protocolCode",
     "liz.field.lizMessageType": "lizMessageType",
     "liz.field.senderType": "senderType",
-    "liz.field.senderId": "senderId",
-    "liz.field.lizUserId": "lizUserId",
-    "liz.field.alarmId": "alarmId",
+    "liz.custom.title": "Custom key / value",
+    "liz.custom.help": "key resolves in header + top-level (dot-paths ok); arrays match per-element",
+    "liz.custom.add": "Add rule",
+    "liz.custom.remove": "Delete rule",
+    "liz.custom.keyPlaceholder": "key (e.g. alarmId, deviceIds, senderId)",
 };
 
 export type Lang = "ko" | "en";
