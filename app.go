@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 
+	"kafka-client/internal/certutil"
 	"kafka-client/internal/kafka"
 	"kafka-client/internal/profile"
 	"kafka-client/internal/remotefetch"
@@ -137,9 +138,16 @@ func (a *App) RemoteListDir(host string, port int, user, password, dir string) (
 }
 
 // RemoteReadFile reads a single remote file over SSH and returns its contents
-// (used to pull the selected CA certificate into the dialog).
+// (used to pull the selected certificate into the dialog).
 func (a *App) RemoteReadFile(host string, port int, user, password, path string) (string, error) {
 	return remotefetch.ReadFile(a.ctx, host, port, user, password, path)
+}
+
+// ParseCert summarizes a PEM certificate (CN/SAN, CA-or-leaf) so the dialog can
+// auto-fill the broker hostname and show whether it will be used as a CA
+// (truststore) or pinned (broker cert trusted directly).
+func (a *App) ParseCert(pemText string) (certutil.Info, error) {
+	return certutil.Parse(pemText)
 }
 
 // TestConnection probes the given seed brokers, optionally rewriting
@@ -147,6 +155,13 @@ func (a *App) RemoteReadFile(host string, port int, user, password, path string)
 // settings (nil / disabled = PLAINTEXT).
 func (a *App) TestConnection(servers []string, hostAliases map[string]string, tls *profile.TLSConfig) error {
 	return a.manager.Test(a.ctx, servers, hostAliases, toKafkaTLS(tls))
+}
+
+// TestConnectionInfo probes the brokers like TestConnection but returns the
+// discovered cluster metadata (controller + broker list) so the dialog can
+// confirm what it connected to.
+func (a *App) TestConnectionInfo(servers []string, hostAliases map[string]string, tls *profile.TLSConfig) (kafka.ClusterInfo, error) {
+	return a.manager.TestInfo(a.ctx, servers, hostAliases, toKafkaTLS(tls))
 }
 
 func (a *App) Connect(profileID string) error {

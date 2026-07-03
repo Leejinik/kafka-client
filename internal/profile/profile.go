@@ -35,14 +35,18 @@ type TLSConfig struct {
 	// (and the SNI sent). Normally left empty so the advertised hostname is
 	// used, which matches the broker cert CN.
 	ServerName string `json:"serverName,omitempty"`
-	// Remote optionally remembers SSH details for pulling the CA cert off a
-	// broker host. Saved for convenience (the password is stored in plaintext).
+	// Remote is the legacy single SSH target (kept so old profiles still load).
+	// New profiles write Remotes instead.
 	Remote *RemoteFetch `json:"remote,omitempty"`
+	// Remotes holds SSH details per broker host, so a multi-broker cluster can
+	// be browsed one host at a time with its own credentials.
+	Remotes []RemoteFetch `json:"remotes,omitempty"`
 }
 
 // RemoteFetch holds SSH connection details used to browse/pull cert files from
 // a remote host into the CA field. Persisted with the profile (plaintext
-// password) at the user's request.
+// password) at the user's request. Host identifies which broker these
+// credentials belong to.
 type RemoteFetch struct {
 	Host     string `json:"host,omitempty"`
 	Port     int    `json:"port,omitempty"`

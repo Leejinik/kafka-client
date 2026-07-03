@@ -1,12 +1,15 @@
 package kafka
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -31,14 +34,19 @@ type TLSOptions struct {
 // per-connection *tls.Config inside the dialer, where the target hostname is
 // finally known.
 type tlsDialConfig struct {
-	roots       *x509.CertPool    // nil = OS trust store
+	roots       *x509.CertPool    // CA certs -> chain verification; nil = OS trust store
+	pinned      [][]byte          // raw DER of leaf certs trusted exactly (pinning)
 	clientCerts []tls.Certificate // 2-way mTLS; empty for 1-way
 	insecure    bool              // user asked to skip all verification
 	serverName  string            // user override; "" = use the dialed hostname
 }
 
 // buildTLSConfig resolves TLSOptions into a *tlsDialConfig, or (nil, nil) when
-// TLS is disabled.
+// TLS is disabled. Every certificate in the trust PEM (CACertPEM) is used two
+// ways at once, so the user can hand us a CA *or* a broker cert without saying
+// which: each cert becomes both a chain-verification anchor (works for a real
+// CA — even a hand-rolled one missing the CA:TRUE flag) and an exact-match pin
+// (works when the user supplies the broker's own cert).
 func buildTLSConfig(o *TLSOptions) (*tlsDialConfig, error) {
 	if o == nil || !o.Enabled {
 		return nil, nil
@@ -47,12 +55,32 @@ func buildTLSConfig(o *TLSOptions) (*tlsDialConfig, error) {
 		insecure:   o.InsecureSkipVerify,
 		serverName: strings.TrimSpace(o.ServerName),
 	}
-	if ca := strings.TrimSpace(o.CACertPEM); ca != "" {
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM([]byte(ca)) {
-			return nil, errors.New("CA 인증서 PEM을 파싱할 수 없습니다 (유효한 -----BEGIN CERTIFICATE----- 블록이 없음)")
+	if trust := strings.TrimSpace(o.CACertPEM); trust != "" {
+		rest := []byte(trust)
+		parsed := 0
+		for {
+			var block *pem.Block
+			block, rest = pem.Decode(rest)
+			if block == nil {
+				break
+			}
+			if block.Type != "CERTIFICATE" {
+				continue
+			}
+			crt, err := x509.ParseCertificate(block.Bytes)
+			if err != nil {
+				continue
+			}
+			parsed++
+			if c.roots == nil {
+				c.roots = x509.NewCertPool()
+			}
+			c.roots.AddCert(crt)                 // chain-verification anchor (ignores the CA flag)
+			c.pinned = append(c.pinned, crt.Raw) // and exact-match pin (name-agnostic)
 		}
-		c.roots = pool
+		if parsed == 0 {
+			return nil, errors.New("인증서 PEM을 파싱할 수 없습니다 (유효한 -----BEGIN CERTIFICATE----- 블록이 없음)")
+		}
 	}
 	cert := strings.TrimSpace(o.ClientCertPEM)
 	key := strings.TrimSpace(o.ClientKeyPEM)
@@ -88,6 +116,7 @@ func (t *tlsDialConfig) tlsConfigFor(dialedHost string) *tls.Config {
 		return conf // user explicitly opted out of all verification
 	}
 	roots := t.roots
+	pinned := t.pinned
 	conf.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 		if len(rawCerts) == 0 {
 			return errors.New("서버가 인증서를 제시하지 않았습니다")
@@ -101,15 +130,21 @@ func (t *tlsDialConfig) tlsConfigFor(dialedHost string) *tls.Config {
 			certs = append(certs, crt)
 		}
 		leaf := certs[0]
+		// 1) Pinned? Trust the exact broker cert regardless of name/CA.
+		for _, p := range pinned {
+			if bytes.Equal(leaf.Raw, p) {
+				return nil
+			}
+		}
+		// 2) Chain of trust against the supplied certs (or OS roots if none).
 		inter := x509.NewCertPool()
 		for _, crt := range certs[1:] {
 			inter.AddCert(crt)
 		}
-		// 1) Chain of trust against the CA (this is the real MITM protection).
 		if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: inter}); err != nil {
 			return fmt.Errorf("인증서 체인 검증 실패: %w", err)
 		}
-		// 2) Hostname: prefer SANs; fall back to CN for legacy certs.
+		// 4) Hostname: prefer SANs; fall back to CN for legacy certs.
 		if len(leaf.DNSNames) > 0 || len(leaf.IPAddresses) > 0 {
 			return leaf.VerifyHostname(name)
 		}
@@ -337,4 +372,49 @@ func (m *Manager) Test(ctx context.Context, servers []string, aliases map[string
 	pingCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	return cl.Ping(pingCtx)
+}
+
+// TestInfo makes a transient connection and returns cluster metadata (broker
+// list + controller). Powers the "confirm brokers after connect" step in the
+// profile dialog — same probe as Test but reports what it found.
+func (m *Manager) TestInfo(ctx context.Context, servers []string, aliases map[string]string, tlsOpts *TLSOptions) (ClusterInfo, error) {
+	if len(servers) == 0 {
+		return ClusterInfo{}, errors.New("bootstrap servers are required")
+	}
+	tlsConf, err := buildTLSConfig(tlsOpts)
+	if err != nil {
+		return ClusterInfo{}, err
+	}
+	cl, err := kgo.NewClient(
+		kgo.SeedBrokers(servers...),
+		kgo.DialTimeout(5*time.Second),
+		kgo.Dialer(aliasDialer(aliases, tlsConf)),
+		kgo.ClientID("kafka-client-tool-test"),
+		kgo.ProducerBatchCompression(kgo.NoCompression()),
+	)
+	if err != nil {
+		return ClusterInfo{}, err
+	}
+	defer cl.Close()
+	adm := kadm.NewClient(cl)
+	mdCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	md, err := adm.Metadata(mdCtx)
+	if err != nil {
+		return ClusterInfo{}, fmt.Errorf("metadata: %w", err)
+	}
+	info := ClusterInfo{
+		ClusterID:  md.Cluster,
+		Controller: md.Controller,
+		Brokers:    make([]BrokerInfo, 0, len(md.Brokers)),
+	}
+	for _, b := range md.Brokers {
+		rack := ""
+		if b.Rack != nil {
+			rack = *b.Rack
+		}
+		info.Brokers = append(info.Brokers, BrokerInfo{NodeID: b.NodeID, Host: b.Host, Port: b.Port, Rack: rack})
+	}
+	sort.Slice(info.Brokers, func(i, j int) bool { return info.Brokers[i].NodeID < info.Brokers[j].NodeID })
+	return info, nil
 }

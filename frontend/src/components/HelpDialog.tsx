@@ -149,11 +149,11 @@ function buildSectionsKo(): Section[] {
                 <>
                     <p>좌측 사이드바 상단 <M>+ 추가</M> → 다이얼로그에서 입력 후 저장.</p>
                     <ul>
-                        <li><b>이름</b> / <b>Bootstrap servers</b> (필수) — 쉼표 또는 줄바꿈으로 여러 개</li>
+                        <li><b>브로커 테이블</b> — 행 하나가 브로커 한 대이고 <b>호스트명 · IP(선택) · 포트</b>를 넣습니다. <M>+ 브로커 추가</M>로 여러 대 등록. 호스트명이 PC에서 안 풀리면 <b>IP 칸</b>에 실제 주소를 넣으면 됩니다(<M>/etc/hosts</M> 대신). 이 표에서 Bootstrap servers·Host alias가 자동 생성됩니다.</li>
                         <li><b>기본 토픽</b> (선택) — 연결 후 조회/발행 탭이 처음 열릴 때 자동 선택될 토픽</li>
-                        <li><b>Host alias</b> (선택) — 브로커가 advertise하는 hostname이 PC에서 안 풀릴 때 <M>broker-2=192.0.2.20</M> 형식으로 매핑. <M>/etc/hosts</M> 안 만져도 됨</li>
-                        <li><b>SSL 사용</b> (선택) — 브로커가 SSL 리스너로 열려 있을 때 체크. <b>CA 인증서(PEM)</b> 하나만 붙여넣으면 1-way SSL 연결 (아래 참고)</li>
-                        <li><b>연결 테스트</b> 버튼으로 저장 전에 reach 가능 여부 확인</li>
+                        <li><b>SSL 사용</b> (선택) — 체크하면 <b>인증서 팝업</b>이 떠서 인증서를 받습니다 (아래 참고)</li>
+                        <li><b>Schema Registry URL</b> (선택)</li>
+                        <li><b>연결 테스트</b> — 저장 전에 reach 확인 + <b>확인된 브로커 목록·controller</b>를 보여줍니다</li>
                     </ul>
                     <p>등록 후 사이드바에서 클릭 → 상단바 <M>연결</M>. 연결되면 controller broker 번호가 옆에 표시되고 토픽/조회/발행 탭이 열립니다.</p>
                     <Box kind="tip">
@@ -162,10 +162,9 @@ function buildSectionsKo(): Section[] {
                     <p style={{ marginTop: 16 }}><b>SSL 연결 (1-way)</b></p>
                     <p>브로커가 <M>SSL://…:9292</M> 같은 SSL 리스너로 열려 있을 때 씁니다. 서버 인증만 하는 1-way(<M>ssl.client.auth=none</M>)면 <b>CA 인증서 하나</b>면 됩니다.</p>
                     <ol>
-                        <li><b>Bootstrap servers</b> — SSL 포트로. 브로커 인증서 CN에 맞춘 호스트명을 씁니다. 예: <M>kafka1.harrysingle.com:9292</M></li>
-                        <li><b>Host alias</b> — 그 호스트명을 실제 IP로 매핑. 예: <M>kafka1.harrysingle.com=192.168.1.171</M> (IP로 접속하되 인증서는 호스트명으로 검증)</li>
-                        <li><b>SSL 사용</b> 체크 → <b>CA 인증서(PEM)</b>에 브로커 인증서를 서명한 CA(<M>ca.xxx.crt</M>) 내용을 붙여넣기. <M>파일에서 불러오기</M>로 <M>.crt</M> 파일을 읽거나, <M>원격에서 가져오기(SSH)</M>로 브로커 호스트에 접속해 인증서 폴더에서 바로 골라올 수 있습니다 (SSH 접속 정보는 프로필에 저장).</li>
-                        <li><b>연결 테스트</b> → OK면 저장.</li>
+                        <li><b>브로커 테이블</b> — <b>IP</b>(예: <M>192.168.1.171</M>)와 <b>포트</b>(SSL 포트, 예: <M>9292</M>)를 넣습니다. <b>호스트명은 인증서에서 자동으로 채워지니</b> 보통 비워둬도 됩니다. IP로 접속하되 인증서는 호스트명(CN)으로 검증합니다.</li>
+                        <li><b>SSL 사용</b> 체크 → 뜨는 <b>인증서 팝업</b>에서 인증서를 받습니다. <b>CA 인증서</b>(예: <M>ca.xxx.crt</M>, 전체 검증)든 <b>브로커 인증서</b>(예: <M>kafka1.xxx.crt</M>, 핀닝)든 자동 판별합니다. <b>브로커 인증서를 받으면 그 안의 호스트명(CN)이 브로커 표에 자동 입력</b>됩니다. 파일·붙여넣기·<M>원격에서 가져오기(SSH)</M> 지원 — SSH는 브로커 테이블 IP를 드롭다운으로 골라 호스트별로 개별 접속합니다.</li>
+                        <li><b>연결 테스트</b> → OK + 확인된 브로커가 뜨면 저장.</li>
                     </ol>
                     <Box kind="tip">
                         Kafka SSL 인증서는 보통 <b>SAN 없이 CN만</b> 들어 있습니다. 이 툴은 CA로 <b>체인은 정상 검증</b>하면서 호스트명은 CN으로 대조하므로 그런 레거시 인증서도 그대로 붙습니다 (MITM 방어 유지). <b>2-way mTLS</b>(<M>ssl.client.auth=required</M>)면 <M>고급</M>에서 클라이언트 인증서/키를 추가하세요. 검증 자체를 끄는 <b>인증서 검증 건너뛰기</b>는 테스트용이며 MITM에 노출됩니다.
@@ -473,11 +472,11 @@ function buildSectionsEn(): Section[] {
                 <>
                     <p>Sidebar → <M>+ Add</M> → fill the dialog and save.</p>
                     <ul>
-                        <li><b>Name</b> / <b>Bootstrap servers</b> (required) — comma or newline separated</li>
+                        <li><b>Broker table</b> — one row per broker with <b>hostname · IP (optional) · port</b>. Use <M>+ Add broker</M> for multiple. If a hostname doesn't resolve on your PC, put the real address in the <b>IP column</b> (instead of <M>/etc/hosts</M>). Bootstrap servers and host aliases are generated from this table.</li>
                         <li><b>Default topic</b> (optional) — auto-selected the first time you open Consume/Produce after connecting</li>
-                        <li><b>Host aliases</b> (optional) — map broker-advertised hostnames at dial time, e.g. <M>broker-2=192.0.2.20</M>. No <M>/etc/hosts</M> edits needed</li>
-                        <li><b>Use SSL</b> (optional) — check when the broker exposes an SSL listener. For 1-way SSL just paste the <b>CA certificate (PEM)</b> (see below)</li>
-                        <li><b>Test connection</b> verifies reachability before saving</li>
+                        <li><b>Use SSL</b> (optional) — checking it opens a <b>certificate popup</b> (see below)</li>
+                        <li><b>Schema Registry URL</b> (optional)</li>
+                        <li><b>Test connection</b> — checks reachability before saving and shows the <b>discovered brokers · controller</b></li>
                     </ul>
                     <p>Then select it in the sidebar and press <M>Connect</M> in the top bar. The controller broker shows next to the name once connected.</p>
                     <Box kind="tip">
@@ -486,10 +485,9 @@ function buildSectionsEn(): Section[] {
                     <p style={{ marginTop: 16 }}><b>SSL connection (1-way)</b></p>
                     <p>Use this when the broker exposes an SSL listener such as <M>SSL://…:9292</M>. For server-auth-only 1-way SSL (<M>ssl.client.auth=none</M>) a single <b>CA certificate</b> is all you need.</p>
                     <ol>
-                        <li><b>Bootstrap servers</b> — use the SSL ports with the hostname that matches the broker cert CN, e.g. <M>kafka1.harrysingle.com:9292</M></li>
-                        <li><b>Host aliases</b> — map that hostname to the real IP, e.g. <M>kafka1.harrysingle.com=192.168.1.171</M> (dial by IP, verify the cert by hostname)</li>
-                        <li>Check <b>Use SSL</b> → paste the CA that signed the broker certs (<M>ca.xxx.crt</M>) into <b>CA certificate (PEM)</b>. Use <M>Load from file</M> to read a <M>.crt</M>, or <M>Fetch from remote (SSH)</M> to browse and pull the cert straight off the broker host (SSH details are saved with the profile).</li>
-                        <li><b>Test connection</b> → save if it returns OK.</li>
+                        <li><b>Broker table</b> — enter the <b>IP</b> (e.g. <M>192.168.1.171</M>) and <b>Port</b> (the SSL port, e.g. <M>9292</M>). The <b>hostname is auto-filled from the certificate</b>, so you can usually leave it blank. It dials by IP but verifies the cert by hostname (CN).</li>
+                        <li>Check <b>Use SSL</b> → the <b>certificate popup</b> opens. Give it a <b>CA cert</b> (e.g. <M>ca.xxx.crt</M>, chain-verified) or a <b>broker cert</b> (e.g. <M>kafka1.xxx.crt</M>, pinned) — it's auto-detected. <b>A broker cert auto-fills its hostname (CN) into the broker table.</b> Supports file, paste, and <M>Fetch from remote (SSH)</M> — SSH picks a broker IP from the dropdown and connects per host.</li>
+                        <li><b>Test connection</b> → save once it returns OK and shows the discovered brokers.</li>
                     </ol>
                     <Box kind="tip">
                         Kafka SSL certs usually carry the hostname in the <b>CN only, without SANs</b>. This tool still <b>verifies the full chain</b> against the CA while matching the hostname against the CN, so those legacy certs connect fine (MITM protection intact). For <b>2-way mTLS</b> (<M>ssl.client.auth=required</M>) add a client cert/key under <M>Advanced</M>. <b>Skip certificate verification</b> is for testing only — it exposes the connection to MITM.
