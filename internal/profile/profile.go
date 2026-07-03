@@ -13,6 +13,44 @@ import (
 	"github.com/google/uuid"
 )
 
+// TLSConfig holds optional SSL/TLS settings used when the cluster exposes an
+// SSL listener. For 1-way SSL (server auth only, ssl.client.auth=none) just
+// enable it and paste the CA certificate that signed the broker certs; the CA
+// is the client's truststore. ClientCert/ClientKey are only needed for 2-way
+// mTLS clusters (ssl.client.auth=required).
+type TLSConfig struct {
+	// Enabled turns on security.protocol=SSL for this cluster.
+	Enabled bool `json:"enabled,omitempty"`
+	// CACert is the PEM of the CA certificate that signed the broker certs
+	// (the truststore). Empty means "use the OS trust store".
+	CACert string `json:"caCert,omitempty"`
+	// ClientCert / ClientKey are PEM material for 2-way mTLS. Leave empty for
+	// 1-way SSL.
+	ClientCert string `json:"clientCert,omitempty"`
+	ClientKey  string `json:"clientKey,omitempty"`
+	// InsecureSkipVerify disables certificate and hostname verification.
+	// Escape hatch only — leaves the connection open to MITM.
+	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
+	// ServerName overrides the hostname verified against the broker cert
+	// (and the SNI sent). Normally left empty so the advertised hostname is
+	// used, which matches the broker cert CN.
+	ServerName string `json:"serverName,omitempty"`
+	// Remote optionally remembers SSH details for pulling the CA cert off a
+	// broker host. Saved for convenience (the password is stored in plaintext).
+	Remote *RemoteFetch `json:"remote,omitempty"`
+}
+
+// RemoteFetch holds SSH connection details used to browse/pull cert files from
+// a remote host into the CA field. Persisted with the profile (plaintext
+// password) at the user's request.
+type RemoteFetch struct {
+	Host     string `json:"host,omitempty"`
+	Port     int    `json:"port,omitempty"`
+	User     string `json:"user,omitempty"`
+	Password string `json:"password,omitempty"`
+	Dir      string `json:"dir,omitempty"`
+}
+
 // Profile represents a Kafka cluster connection profile.
 type Profile struct {
 	ID                string            `json:"id"`
@@ -25,8 +63,10 @@ type Profile struct {
 	// advertises (e.g. "broker-2"), valued with the IP or alternate hostname
 	// that the local machine can actually reach (e.g. "192.0.2.20").
 	HostAliases map[string]string `json:"hostAliases,omitempty"`
-	CreatedAt   time.Time         `json:"createdAt"`
-	UpdatedAt   time.Time         `json:"updatedAt"`
+	// TLS holds optional SSL settings. Nil / disabled means PLAINTEXT.
+	TLS       *TLSConfig `json:"tls,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
 }
 
 type fileLayout struct {

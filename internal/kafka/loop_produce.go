@@ -64,7 +64,7 @@ func buildTunedClient(c *Client, tn *ProducerTuning) (*kgo.Client, error) {
 		kgo.ClientID("kafka-client-tool-loadtest"),
 		kgo.MetadataMinAge(5 * time.Second),
 		kgo.DialTimeout(10 * time.Second),
-		kgo.Dialer(aliasDialer(c.aliases)),
+		kgo.Dialer(aliasDialer(c.aliases, c.tlsConf)),
 	}
 
 	switch strings.ToLower(strings.TrimSpace(tn.Compression)) {

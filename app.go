@@ -9,6 +9,7 @@ import (
 
 	"kafka-client/internal/kafka"
 	"kafka-client/internal/profile"
+	"kafka-client/internal/remotefetch"
 	"kafka-client/internal/updater"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -113,10 +114,39 @@ func (a *App) ConfigDir() string {
 
 // --- Connection ---------------------------------------------------------
 
+// toKafkaTLS maps a stored profile TLS config to the kafka package's transient
+// TLS options. Returns nil (PLAINTEXT) when TLS is absent or disabled.
+func toKafkaTLS(t *profile.TLSConfig) *kafka.TLSOptions {
+	if t == nil || !t.Enabled {
+		return nil
+	}
+	return &kafka.TLSOptions{
+		Enabled:            true,
+		CACertPEM:          t.CACert,
+		ClientCertPEM:      t.ClientCert,
+		ClientKeyPEM:       t.ClientKey,
+		InsecureSkipVerify: t.InsecureSkipVerify,
+		ServerName:         t.ServerName,
+	}
+}
+
+// RemoteListDir lists a directory on a remote host over SSH (dirs + files),
+// powering the FTP-style cert browser in the SSL dialog.
+func (a *App) RemoteListDir(host string, port int, user, password, dir string) ([]remotefetch.Entry, error) {
+	return remotefetch.ListDir(a.ctx, host, port, user, password, dir)
+}
+
+// RemoteReadFile reads a single remote file over SSH and returns its contents
+// (used to pull the selected CA certificate into the dialog).
+func (a *App) RemoteReadFile(host string, port int, user, password, path string) (string, error) {
+	return remotefetch.ReadFile(a.ctx, host, port, user, password, path)
+}
+
 // TestConnection probes the given seed brokers, optionally rewriting
-// advertised hostnames via the supplied alias map.
-func (a *App) TestConnection(servers []string, hostAliases map[string]string) error {
-	return a.manager.Test(a.ctx, servers, hostAliases)
+// advertised hostnames via the supplied alias map and using the given TLS
+// settings (nil / disabled = PLAINTEXT).
+func (a *App) TestConnection(servers []string, hostAliases map[string]string, tls *profile.TLSConfig) error {
+	return a.manager.Test(a.ctx, servers, hostAliases, toKafkaTLS(tls))
 }
 
 func (a *App) Connect(profileID string) error {
@@ -124,7 +154,7 @@ func (a *App) Connect(profileID string) error {
 	if err != nil {
 		return err
 	}
-	return a.manager.Connect(a.ctx, profileID, p.BootstrapServers, p.HostAliases)
+	return a.manager.Connect(a.ctx, profileID, p.BootstrapServers, p.HostAliases, toKafkaTLS(p.TLS))
 }
 
 func (a *App) Disconnect(profileID string) {

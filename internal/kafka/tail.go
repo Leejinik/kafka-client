@@ -62,7 +62,7 @@ func (m *Manager) TailConsume(
 	cl, err := kgo.NewClient(
 		kgo.SeedBrokers(c.servers...),
 		kgo.ClientID("kafka-client-tool-tail"),
-		kgo.Dialer(aliasDialer(c.aliases)),
+		kgo.Dialer(aliasDialer(c.aliases, c.tlsConf)),
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{topic: startOffsets}),
 		kgo.FetchMaxBytes(50<<20),
 		kgo.FetchMaxPartitionBytes(10<<20),
