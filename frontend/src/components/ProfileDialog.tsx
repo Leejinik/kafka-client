@@ -84,24 +84,19 @@ export function ProfileDialog({ lang, editing, onClose, onSaved }: Props) {
     const addRow = () => setBrokers((prev) => [...prev, { host: "", ip: "", port: "" }]);
     const removeRow = (i: number) => setBrokers((prev) => (prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i)));
 
-    // Fill a broker's hostname from a parsed broker cert — conservatively, so a
-    // cert is never assigned to the wrong broker:
-    //  - if it's already some row's host, do nothing;
-    //  - if sourceHost is given (SSH), fill only the row matching that IP/host,
-    //    never an arbitrary fallback row;
-    //  - if there's no sourceHost (file/paste), fill only when exactly one row
-    //    still has an empty host (otherwise it's ambiguous — leave it to the user).
-    const applyHostname = (cn: string, sourceHost?: string) => {
+    // Fill a broker row's hostname from a parsed broker cert. With an explicit
+    // targetIdx (an SSH fetch for a specific broker) fill exactly that row.
+    // Without one (file/paste) fill only when exactly one row still has an empty
+    // host, and never duplicate a hostname another row already uses.
+    const applyHostname = (cn: string, targetIdx?: number) => {
         setBrokers((prev) => {
-            if (prev.some((b) => b.host.trim().toLowerCase() === cn.toLowerCase())) return prev;
-            let idx = -1;
-            if (sourceHost) {
-                idx = prev.findIndex((b) => b.ip.trim() === sourceHost || b.host.trim() === sourceHost);
-            } else {
+            let idx = targetIdx ?? -1;
+            if (idx < 0) {
+                if (prev.some((b) => b.host.trim().toLowerCase() === cn.toLowerCase())) return prev;
                 const empties = prev.map((b, i) => [b, i] as const).filter(([b]) => !b.host.trim());
                 if (empties.length === 1) idx = empties[0][1];
             }
-            if (idx < 0) return prev;
+            if (idx < 0 || idx >= prev.length) return prev;
             return prev.map((b, i) => (i === idx ? { ...b, host: cn } : b));
         });
     };
@@ -125,19 +120,19 @@ export function ProfileDialog({ lang, editing, onClose, onSaved }: Props) {
     // only if it's genuinely a broker leaf (not self-signed, not a CA) with a
     // hostname — auto-fill the matching broker row's hostname.
     const lastParsedRef = useRef<string>("");
-    const addCert = async (pem: string, sourceHost?: string) => {
+    const addCert = async (pem: string, targetIdx?: number) => {
         const trimmed = pem.trim();
         if (!trimmed) return;
         setCaCert((prev) => (prev.includes(trimmed) ? prev : prev.trim() ? prev.trim() + "\n" + trimmed : trimmed));
         // Skip redundant re-parsing (e.g. the textarea onBlur firing with unchanged text).
-        if (!sourceHost && trimmed === lastParsedRef.current) return;
+        if (targetIdx === undefined && trimmed === lastParsedRef.current) return;
         lastParsedRef.current = trimmed;
         try {
             const info = (await ParseCert(trimmed)) as CertInfo;
             setCertInfo(info);
             const hostname = info.commonName || info.dnsNames?.[0] || "";
             if (!info.selfSigned && !info.isCA && hostname) {
-                applyHostname(hostname, sourceHost);
+                applyHostname(hostname, targetIdx);
                 setCertMsg(`${t(lang, "profile.ssl.cert.leaf")} (${hostname})`);
             } else {
                 setCertMsg(`${t(lang, "profile.ssl.cert.ca")} (${info.commonName || hostname || "?"})`);
@@ -148,47 +143,44 @@ export function ProfileDialog({ lang, editing, onClose, onSaved }: Props) {
     };
 
     // --- Remote cert fetch over SSH (per-broker FTP-style browser) ---
+    // Keyed by broker row index, so a broker is identified purely by its number
+    // even before any address is entered. The SSH host IS the broker's IP —
+    // typing it in the popup fills the broker row's IP, and fetching a broker
+    // cert fills that row's hostname.
     type SshCreds = { port: number; user: string; password: string; dir: string };
-    const initRemotes = (): Record<string, SshCreds> => {
-        const out: Record<string, SshCreds> = {};
+    const emptyCreds: SshCreds = { port: 22, user: "", password: "", dir: "" };
+    const initRemotes = (): Record<number, SshCreds> => {
+        const out: Record<number, SshCreds> = {};
         const list = editTls?.remotes ?? (editTls?.remote ? [editTls.remote] : []);
-        for (const r of list) {
-            const key = (r.host ?? "").trim();
-            if (!key) continue;
-            out[key] = { port: r.port ?? 22, user: r.user ?? "", password: r.password ?? "", dir: r.dir ?? "" };
-        }
+        list.forEach((r, n) => {
+            const host = (r.host ?? "").trim();
+            const found = host ? brokers.findIndex((b) => b.ip.trim() === host || b.host.trim() === host) : -1;
+            out[found >= 0 ? found : n] = { port: r.port ?? 22, user: r.user ?? "", password: r.password ?? "", dir: r.dir ?? "" };
+        });
         return out;
     };
-    const [remotesByHost, setRemotesByHost] = useState<Record<string, SshCreds>>(initRemotes);
-    const savedHosts = Object.keys(remotesByHost);
-    const brokerTargets = Array.from(new Set(brokers.map((b) => b.ip.trim() || b.host.trim()).filter(Boolean)));
-    const sshTargets = Array.from(new Set([...brokerTargets, ...savedHosts])).filter(Boolean);
-    const [rHost, setRHost] = useState<string>(savedHosts[0] ?? brokerTargets[0] ?? "");
+    const [remotesByIdx, setRemotesByIdx] = useState<Record<number, SshCreds>>(initRemotes);
+    const [rIdx, setRIdx] = useState(0);
     const [rEntries, setREntries] = useState<{ name: string; isDir: boolean }[]>([]);
     const [rListed, setRListed] = useState(false);
     const [rBusy, setRBusy] = useState(false);
     const [rMsg, setRMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
     const [showRemote, setShowRemote] = useState((editTls?.remotes?.length ?? 0) > 0 || !!editTls?.remote);
 
-    const emptyCreds: SshCreds = { port: 22, user: "", password: "", dir: "" };
-    const cur: SshCreds = remotesByHost[rHost] ?? emptyCreds;
+    const cur: SshCreds = remotesByIdx[rIdx] ?? emptyCreds;
     const setCur = (patch: Partial<SshCreds>) =>
-        setRemotesByHost((prev) => ({ ...prev, [rHost]: { ...(prev[rHost] ?? emptyCreds), ...patch } }));
-    const selectHost = (h: string) => {
-        setRHost(h);
+        setRemotesByIdx((prev) => ({ ...prev, [rIdx]: { ...(prev[rIdx] ?? emptyCreds), ...patch } }));
+    const selectBroker = (i: number) => {
+        setRIdx(i);
         setREntries([]);
         setRListed(false);
         setRMsg(null);
     };
-    const hostConfigured = (h: string) => {
-        const c = remotesByHost[h];
+    const brokerConfigured = (i: number) => {
+        const c = remotesByIdx[i];
         return !!c && (c.user.trim() !== "" || c.password !== "");
     };
-    const targetLabel = (target: string) => {
-        const b = brokers.find((br) => (br.ip.trim() || br.host.trim()) === target);
-        if (b && b.host.trim() && b.ip.trim()) return `${b.host.trim()} (${b.ip.trim()})`;
-        return target;
-    };
+    const sshHost = () => brokers[rIdx]?.ip.trim() || brokers[rIdx]?.host.trim() || "";
     const normDir = (p: string) => {
         const s = p.trim().replace(/\/+$/, "");
         return s === "" ? "/" : s;
@@ -201,14 +193,15 @@ export function ProfileDialog({ lang, editing, onClose, onSaved }: Props) {
     const joinPath = (p: string, n: string) => (normDir(p) === "/" ? "" : normDir(p)) + "/" + n;
 
     const browseRemote = async (path: string) => {
-        if (!rHost.trim()) {
+        const host = sshHost();
+        if (!host) {
             setRMsg({ kind: "err", text: t(lang, "profile.ssl.remote.nohost") });
             return;
         }
         setRBusy(true);
         setRMsg(null);
         try {
-            const entries = await RemoteListDir(rHost.trim(), cur.port || 22, cur.user.trim(), cur.password, normDir(path));
+            const entries = await RemoteListDir(host, cur.port || 22, cur.user.trim(), cur.password, normDir(path));
             setREntries(entries || []);
             setCur({ dir: normDir(path) });
             setRListed(true);
@@ -222,8 +215,8 @@ export function ProfileDialog({ lang, editing, onClose, onSaved }: Props) {
         setRBusy(true);
         setRMsg(null);
         try {
-            const content = await RemoteReadFile(rHost.trim(), cur.port || 22, cur.user.trim(), cur.password, joinPath(cur.dir, fileName));
-            await addCert(content, rHost.trim());
+            const content = await RemoteReadFile(sshHost(), cur.port || 22, cur.user.trim(), cur.password, joinPath(cur.dir, fileName));
+            await addCert(content, rIdx);
             setRMsg({ kind: "ok", text: `${t(lang, "profile.ssl.remote.loaded")} ${fileName}` });
         } catch (e) {
             setRMsg({ kind: "err", text: errString(e) });
@@ -254,10 +247,11 @@ export function ProfileDialog({ lang, editing, onClose, onSaved }: Props) {
     };
 
     const buildRemotes = () => {
-        const list = Object.entries(remotesByHost)
-            .filter(([h, c]) => h.trim() && (c.user.trim() || c.password || c.dir.trim()))
-            .map(([h, c]) => ({
-                host: h.trim(),
+        const list = Object.entries(remotesByIdx)
+            .map(([k, c]) => ({ b: brokers[Number(k)], c }))
+            .filter(({ b, c }) => b && (b.ip.trim() || b.host.trim()) && (c.user.trim() || c.password || c.dir.trim()))
+            .map(({ b, c }) => ({
+                host: b.ip.trim() || b.host.trim(),
                 port: c.port || undefined,
                 user: c.user.trim() || undefined,
                 password: c.password || undefined,
@@ -474,17 +468,23 @@ export function ProfileDialog({ lang, editing, onClose, onSaved }: Props) {
                         </button>
                         {showRemote && (
                             <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 10, marginTop: 6, display: "flex", flexDirection: "column", gap: 8 }}>
+                                <select value={rIdx} onChange={(e) => selectBroker(Number(e.target.value))} style={{ width: "100%" }}>
+                                    {brokers.map((b, i) => (
+                                        <option key={i} value={i}>
+                                            {brokerConfigured(i) ? "✓ " : ""}
+                                            {t(lang, "profile.ssl.remote.broker")} {i + 1}
+                                            {b.ip.trim() ? ` (${b.ip.trim()})` : ""}
+                                        </option>
+                                    ))}
+                                </select>
                                 <div style={{ display: "flex", gap: 8 }}>
-                                    <select value={rHost} onChange={(e) => selectHost(e.target.value)} style={{ flex: 3 }}>
-                                        <option value="">{t(lang, "profile.ssl.remote.selectHost")}</option>
-                                        {sshTargets.map((h) => (
-                                            <option key={h} value={h}>
-                                                {hostConfigured(h) ? "✓ " : ""}
-                                                {targetLabel(h)}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <input placeholder="22" value={cur.port} onChange={(e) => setCur({ port: parseInt(e.target.value, 10) || 0 })} style={{ width: 64 }} />
+                                    <input
+                                        placeholder="IP (예: 192.168.1.171)"
+                                        value={brokers[rIdx]?.ip ?? ""}
+                                        onChange={(e) => setRow(rIdx, { ip: e.target.value })}
+                                        style={{ flex: 3, fontFamily: "monospace", fontSize: 12 }}
+                                    />
+                                    <input placeholder="22" title="SSH port" value={cur.port} onChange={(e) => setCur({ port: parseInt(e.target.value, 10) || 0 })} style={{ width: 64 }} />
                                 </div>
                                 <div style={{ display: "flex", gap: 8 }}>
                                     <input placeholder="user" value={cur.user} onChange={(e) => setCur({ user: e.target.value })} style={{ flex: 1 }} />
@@ -503,7 +503,7 @@ export function ProfileDialog({ lang, editing, onClose, onSaved }: Props) {
                                         }}
                                         style={{ flex: 1, fontFamily: "monospace", fontSize: 12 }}
                                     />
-                                    <button type="button" onClick={() => browseRemote(cur.dir)} disabled={rBusy || !rHost}>
+                                    <button type="button" onClick={() => browseRemote(cur.dir)} disabled={rBusy || !sshHost()}>
                                         {t(lang, "profile.ssl.remote.go")}
                                     </button>
                                 </div>
