@@ -61,7 +61,17 @@ func (a *App) startup(ctx context.Context) {
 	if a.profiles != nil {
 		configDir = a.profiles.Dir()
 	}
-	a.updater = updater.New(a.version, configDir)
+	a.updater = updater.New(updater.Config{
+		Owner:          "Leejinik",
+		Repo:           "kafka-client",
+		AssetName:      "kafka-client.exe",
+		CurrentVersion: a.version,
+		ConfigDir:      configDir,
+	})
+	// Sweep any swap leftovers (e.g. <exe>.old parked by the in-place update).
+	if exe, err := os.Executable(); err == nil {
+		a.updater.CleanupLeftovers(exe)
+	}
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -404,6 +414,30 @@ func (a *App) ApplyUpdate(info updater.UpdateInfo) error {
 		wailsruntime.Quit(a.ctx)
 	}()
 	return nil
+}
+
+// AutoUpdate is the GUARDED silent startup path. It checks for a newer build
+// and, if one is available AND the loop guard green-lights it, applies it and
+// quits so the swapped-in binary relaunches. If the guard trips (5 attempts at
+// the same target without the running version converging), it returns
+// Blocked=true so the frontend can show a manual-update badge instead of
+// looping forever.
+func (a *App) AutoUpdate() updater.AutoUpdateResult {
+	if a.updater == nil {
+		return updater.AutoUpdateResult{}
+	}
+	info, err := a.updater.Check(a.ctx)
+	if err != nil || !info.Available {
+		return updater.AutoUpdateResult{Info: info}
+	}
+	if !a.updater.ShouldAutoApply(info) {
+		return updater.AutoUpdateResult{Blocked: true, Info: info}
+	}
+	if err := a.updater.Apply(a.ctx, info); err != nil {
+		return updater.AutoUpdateResult{Blocked: true, Info: info}
+	}
+	go wailsruntime.Quit(a.ctx)
+	return updater.AutoUpdateResult{Applying: true, Info: info}
 }
 
 // GetPendingReleaseNotes returns release notes stashed by the previous

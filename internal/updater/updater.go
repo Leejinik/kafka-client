@@ -4,9 +4,10 @@
 //  1. Check() hits https://api.github.com/repos/<owner>/<repo>/releases/latest,
 //     compares the tag with the build-time Version, and returns an UpdateInfo.
 //  2. Apply() downloads the new .exe next to the current binary (<exe>.new),
-//     writes a tiny update.cmd helper that waits for the running process to
-//     exit, swaps the file, and re-launches it. Apply() returns; the caller is
-//     responsible for quitting the Wails runtime so the helper can take over.
+//     then swaps it in place with NO helper script and NO cmd.exe: the live
+//     exe is renamed aside to <exe>.old, the new bytes are moved onto the
+//     canonical path, and the app relaunches itself and quits. The caller is
+//     responsible for quitting the Wails runtime after Apply() returns.
 //  3. The release notes are persisted to ~/.kafka-client/pending-release-notes.json
 //     before the swap. On the next startup the new binary reads that file and
 //     shows the notes once, then deletes it.
@@ -27,11 +28,10 @@ import (
 )
 
 const (
-	defaultOwner = "Leejinik"
-	defaultRepo  = "kafka-client"
-	defaultAsset = "kafka-client.exe"
-
 	pendingNotesFile = "pending-release-notes.json"
+
+	attemptFile  = "update-attempt.json"
+	maxAutoTries = 5
 )
 
 // UpdateInfo is the result of a Check(). Available=false means "no update";
@@ -61,14 +61,21 @@ type Updater struct {
 	httpClient     *http.Client
 }
 
-// New builds an Updater. configDir is typically ~/.kafka-client.
-func New(currentVersion, configDir string) *Updater {
+// Config holds the per-app identity for an Updater. This is the ONLY
+// app-specific difference between builds — the rest of the package is
+// byte-identical across apps.
+type Config struct {
+	Owner, Repo, AssetName, CurrentVersion, ConfigDir string
+}
+
+// New builds an Updater. ConfigDir is typically ~/.kafka-client.
+func New(c Config) *Updater {
 	return &Updater{
-		owner:          defaultOwner,
-		repo:           defaultRepo,
-		assetName:      defaultAsset,
-		currentVersion: currentVersion,
-		configDir:      configDir,
+		owner:          c.Owner,
+		repo:           c.Repo,
+		assetName:      c.AssetName,
+		currentVersion: c.CurrentVersion,
+		configDir:      c.ConfigDir,
 		httpClient:     &http.Client{Timeout: 15 * time.Second},
 	}
 }
@@ -96,8 +103,8 @@ type ghAsset struct {
 // unauthenticated callers — easily exhausted behind a shared/NAT office IP. So
 // on any API failure (403 rate limit, network error) it falls back to the
 // plain github.com /releases/latest redirect, which is NOT API-rate-limited.
-// Set KAFKA_CLIENT_GITHUB_TOKEN (or GITHUB_TOKEN / GH_TOKEN) to raise the API
-// limit to 5000 req/hour and keep release notes working.
+// Set GITHUB_TOKEN / GH_TOKEN to raise the API limit to 5000 req/hour and keep
+// release notes working.
 func (u *Updater) Check(ctx context.Context) (UpdateInfo, error) {
 	info := UpdateInfo{CurrentVersion: u.currentVersion}
 	if u.currentVersion == "" || u.currentVersion == "dev" {
@@ -219,7 +226,7 @@ func (u *Updater) fetchLatestTagViaRedirect(ctx context.Context) (string, error)
 // or "" if none is set. An authenticated request raises the API rate limit
 // from 60 to 5000 req/hour.
 func githubToken() string {
-	for _, k := range []string{"KAFKA_CLIENT_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"} {
+	for _, k := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
 		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
 			return v
 		}
@@ -373,4 +380,84 @@ func (u *Updater) ClearPendingNotes() error {
 		return nil
 	}
 	return err
+}
+
+// --- Auto-apply loop guard (HR-2) --------------------------------------
+
+// AttemptRecord tracks how many times the SILENT startup path has tried to
+// apply a given target version. It caps a non-converging update (e.g. a bad
+// release that never actually bumps the running version) so we don't relaunch
+// → re-apply → relaunch forever.
+type AttemptRecord struct {
+	TargetVersion string    `json:"targetVersion"`
+	FromVersion   string    `json:"fromVersion"`
+	AttemptedAt   time.Time `json:"attemptedAt"`
+	Count         int       `json:"count"`
+}
+
+func (u *Updater) attemptPath() string { return filepath.Join(u.configDir, attemptFile) }
+
+func (u *Updater) loadAttempt() AttemptRecord {
+	var r AttemptRecord
+	b, err := os.ReadFile(u.attemptPath())
+	if err != nil {
+		return AttemptRecord{}
+	}
+	if json.Unmarshal(b, &r) != nil {
+		return AttemptRecord{}
+	}
+	return r
+}
+
+func (u *Updater) saveAttempt(r AttemptRecord) {
+	if u.configDir == "" {
+		return
+	}
+	_ = os.MkdirAll(u.configDir, 0755)
+	if b, err := json.MarshalIndent(r, "", "  "); err == nil {
+		_ = os.WriteFile(u.attemptPath(), b, 0644)
+	}
+}
+
+// ShouldAutoApply gates the SILENT startup path only. It records the attempt
+// when it green-lights, so a crash mid-apply still counts toward the cap.
+func (u *Updater) ShouldAutoApply(info UpdateInfo) bool {
+	if !info.Available {
+		return false
+	}
+	if u.currentVersion == "" || u.currentVersion == "dev" {
+		return false
+	}
+	r := u.loadAttempt()
+	// If we've reached/passed the last target, the update took → reset.
+	if r.TargetVersion != "" && compareSemver(u.currentVersion, r.TargetVersion) >= 0 {
+		r = AttemptRecord{}
+	}
+	sameTarget := r.TargetVersion == info.LatestVersion
+	if sameTarget && r.Count >= maxAutoTries {
+		return false // 5 non-converging tries exhausted → STOP (show manual badge)
+	}
+	next := AttemptRecord{TargetVersion: info.LatestVersion, FromVersion: u.currentVersion, AttemptedAt: time.Now().UTC(), Count: 1}
+	if sameTarget {
+		next.Count = r.Count + 1
+	}
+	u.saveAttempt(next)
+	return true
+}
+
+// CleanupLeftovers removes stale swap artifacts left next to the running exe
+// (e.g. the .old copy the in-place swap parked). Best-effort.
+func (u *Updater) CleanupLeftovers(exePath string) {
+	for _, suf := range []string{".old", ".new", ".new.part", "~"} {
+		_ = os.Remove(exePath + suf)
+	}
+}
+
+// AutoUpdateResult is returned by the guarded startup path so the frontend can
+// decide between "applying now, app will quit" and "blocked → show a manual
+// update badge".
+type AutoUpdateResult struct {
+	Applying bool       `json:"applying"` // update applying; app will quit shortly
+	Blocked  bool       `json:"blocked"`  // available but guard tripped → manual badge
+	Info     UpdateInfo `json:"info"`
 }

@@ -10,6 +10,7 @@ import {
     GetClusterInfo,
     IsConnected,
     ListProfiles,
+    AutoUpdate,
     CheckForUpdate,
     ApplyUpdate,
     GetPendingReleaseNotes,
@@ -66,6 +67,11 @@ function TabPanel({ active, children }: { active: boolean; children: ReactNode }
         </div>
     );
 }
+
+// Guards the silent startup auto-update so it fires exactly once per process,
+// even across React 18 StrictMode double-invokes of the mount effect. A second
+// AutoUpdate() call would re-check GitHub and could double-trigger the swap.
+let autoApplyFired = false;
 
 function resolveTheme(pref: ThemePref): ResolvedTheme {
     if (pref === "system") {
@@ -162,6 +168,10 @@ export default function App() {
     // us to show exactly once.
     const [updateInfo, setUpdateInfo] = useState<updater.UpdateInfo | null>(null);
     const [releaseNotes, setReleaseNotes] = useState<{ version: string; notes: string } | null>(null);
+    // Set when the silent startup auto-update was BLOCKED by the loop guard
+    // (5 non-converging attempts at the same target). We stop auto-applying and
+    // surface a small persistent badge instead; clicking it applies manually.
+    const [manualUpdate, setManualUpdate] = useState<updater.UpdateInfo | null>(null);
 
     // Sidebar width — drag the splitter at its right edge to resize.
     const sidebar = useResizableWidth("kfc.sidebar.width", 260);
@@ -185,42 +195,42 @@ export default function App() {
 
     useEffect(() => { void refreshProfiles(); }, []);
 
-    // Startup: show release notes from the previous update (if any), then
-    // check GitHub for a newer release. If one is available we apply it
-    // SILENTLY — no prompt: download, swap, relaunch. The new binary shows the
-    // stashed release notes once on its next launch. This is the "just works"
-    // delivery channel (no announcement email needed): opening the app is
-    // enough to pull the latest build. The manual "check for update" button in
-    // Settings still routes through the prompt dialog, since that's an explicit
-    // user action where asking first is the right call.
+    // Startup: show release notes from the previous update (if any), then run
+    // the GUARDED silent auto-update. AutoUpdate() checks GitHub and, if a newer
+    // build is available and the loop guard allows it, downloads + swaps in place
+    // and quits — the window closes and reopens on the new version on its own.
+    // The new binary shows the stashed release notes once on its next launch.
+    // If the guard trips (5 non-converging tries at the same target) it returns
+    // Blocked and we surface a small manual-update badge instead of looping.
+    // The module-level autoApplyFired guard makes this fire exactly once even
+    // under StrictMode's double-mount. The manual "check for update" button in
+    // Settings still routes through the prompt dialog for explicit checks.
     useEffect(() => {
-        let cancelled = false;
+        if (autoApplyFired) return;
+        autoApplyFired = true;
         (async () => {
             try {
                 const notes = await GetPendingReleaseNotes();
-                if (!cancelled && notes && notes.version) {
+                if (notes?.version) {
                     setReleaseNotes({ version: notes.version, notes: notes.notes ?? "" });
                 }
             } catch {
                 // Non-fatal — skip the notes popup.
             }
             try {
-                const info = await CheckForUpdate();
-                if (!cancelled && info?.available) {
-                    // Briefly tell the user, then hand off. ApplyUpdate stashes
-                    // the notes, spawns the swap helper, and quits — the window
-                    // closes and reopens on the new version on its own.
-                    setToast(t(lang, "update.auto.toast", { latest: info.latestVersion }));
-                    await ApplyUpdate(info);
+                const r = await AutoUpdate();
+                if (r?.applying) {
+                    // Update is being applied; the app will quit and relaunch.
+                    setToast(t(lang, "update.applying.badge", { latest: r.info.latestVersion }));
+                } else if (r?.blocked && r.info?.latestVersion) {
+                    // Guard tripped → let the user apply manually via the badge.
+                    setManualUpdate(r.info);
                 }
             } catch {
                 // Network error / API hiccup / download failure — silently skip;
                 // we'll retry on the next launch.
             }
         })();
-        return () => {
-            cancelled = true;
-        };
     }, []);
 
     const dismissReleaseNotes = useCallback(() => {
@@ -587,6 +597,40 @@ export default function App() {
                     info={updateInfo}
                     onClose={() => setUpdateInfo(null)}
                 />
+            )}
+
+            {/* Manual-update badge: shown only when the silent auto-update was
+                blocked by the loop guard. Clicking it applies the update the
+                normal (unguarded) way. Persistent until dismissed or applied. */}
+            {manualUpdate && (
+                <button
+                    onClick={async () => {
+                        try {
+                            setToast(t(lang, "update.applying.badge", { latest: manualUpdate.latestVersion }));
+                            await ApplyUpdate(manualUpdate);
+                            setManualUpdate(null);
+                        } catch (e) {
+                            setToast(t(lang, "update.failed", { err: errString(e) }));
+                        }
+                    }}
+                    title={t(lang, "update.manual.badge", { latest: manualUpdate.latestVersion })}
+                    style={{
+                        position: "fixed",
+                        right: 16,
+                        bottom: 16,
+                        zIndex: 60,
+                        padding: "8px 12px",
+                        borderRadius: 999,
+                        border: "1px solid var(--border)",
+                        background: "var(--accent, #2d7ff9)",
+                        color: "#fff",
+                        fontSize: 12,
+                        cursor: "pointer",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
+                    }}
+                >
+                    ⬆ {t(lang, "update.manual.badge", { latest: manualUpdate.latestVersion })}
+                </button>
             )}
 
             {toast && <div className="toast">{toast}</div>}
