@@ -15,6 +15,7 @@ import {
     ApplyUpdate,
     GetPendingReleaseNotes,
     MarkReleaseNotesSeen,
+    ShowUpdateModeNoticeOnce,
 } from "../wailsjs/go/main/App";
 import { kafka, updater } from "../wailsjs/go/models";
 import {
@@ -209,6 +210,10 @@ export default function App() {
         if (autoApplyFired) return;
         autoApplyFired = true;
         (async () => {
+            // One-time notice: auto-update changed to notify-only due to the
+            // corporate EDR policy. Fire-and-forget (native dialog, self-guarded
+            // to show once per install).
+            ShowUpdateModeNoticeOnce().catch(() => {});
             try {
                 const notes = await GetPendingReleaseNotes();
                 if (notes?.version) {
@@ -218,17 +223,13 @@ export default function App() {
                 // Non-fatal — skip the notes popup.
             }
             try {
+                // Notify-only update check: if a newer build exists, show a
+                // manual "download" pill. We never self-replace the running exe —
+                // endpoint security (EDR) quarantines self-updating binaries.
                 const r = await AutoUpdate();
-                if (r?.applying) {
-                    // Update is being applied; the app will quit and relaunch.
-                    setToast(t(lang, "update.applying.badge", { latest: r.info.latestVersion }));
-                } else if (r?.blocked && r.info?.latestVersion) {
-                    // Guard tripped → let the user apply manually via the badge.
-                    setManualUpdate(r.info);
-                }
+                if (r?.info?.available) setManualUpdate(r.info);
             } catch {
-                // Network error / API hiccup / download failure — silently skip;
-                // we'll retry on the next launch.
+                // Network error / API hiccup — silently skip; retry next launch.
             }
         })();
     }, []);
@@ -606,14 +607,14 @@ export default function App() {
                 <button
                     onClick={async () => {
                         try {
-                            setToast(t(lang, "update.applying.badge", { latest: manualUpdate.latestVersion }));
-                            await ApplyUpdate(manualUpdate);
+                            setToast("브라우저에서 다운로드 페이지를 엽니다… " + (manualUpdate.latestVersion ?? ""));
+                            await ApplyUpdate(manualUpdate); // opens the GitHub release page (no self-replace)
                             setManualUpdate(null);
                         } catch (e) {
-                            setToast(t(lang, "update.failed", { err: errString(e) }));
+                            setToast(errString(e) || "다운로드 페이지 열기 실패");
                         }
                     }}
-                    title={t(lang, "update.manual.badge", { latest: manualUpdate.latestVersion })}
+                    title="브라우저에서 릴리스 페이지를 열어 새 버전을 직접 내려받습니다 (자동 교체 안 함)"
                     style={{
                         position: "fixed",
                         right: 16,
@@ -629,7 +630,7 @@ export default function App() {
                         boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
                     }}
                 >
-                    ⬆ {t(lang, "update.manual.badge", { latest: manualUpdate.latestVersion })}
+                    ⬆️ 새 버전 {manualUpdate.latestVersion} — 다운로드
                 </button>
             )}
 
