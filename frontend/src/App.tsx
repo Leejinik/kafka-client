@@ -33,9 +33,10 @@ import { ReleaseNotesDialog } from "./components/ReleaseNotesDialog";
 import { TopicsPage } from "./pages/TopicsPage";
 import { ConsumePage } from "./pages/ConsumePage";
 import { ProducePage } from "./pages/ProducePage";
+import { SpecialPublishPage } from "./pages/SpecialPublishPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
-type TabKey = "topics" | "consume" | "produce" | "settings";
+type TabKey = "topics" | "consume" | "produce" | "special" | "settings";
 
 // Window dimensions for the two modes. Full app matches main.go's startup
 // size; calc mode shrinks the OS window to wrap the compact converter card.
@@ -473,7 +474,7 @@ export default function App() {
                 </div>
 
                 <nav className="tabs">
-                    {(["topics", "consume", "produce", "settings"] as TabKey[]).map((k) => (
+                    {(["topics", "consume", "produce", "special", "settings"] as TabKey[]).map((k) => (
                         <button
                             key={k}
                             className={"tab" + (tab === k ? " active" : "")}
@@ -549,6 +550,15 @@ export default function App() {
                                     defaultTopic={selected.defaultTopic}
                                     topic={sharedTopic}
                                     onTopicChange={setSharedTopic}
+                                    topicsRev={topicsRev}
+                                />
+                            </TabPanel>
+                            <TabPanel active={tab === "special"}>
+                                <SpecialPublishPage
+                                    key={selected.id}
+                                    lang={lang}
+                                    profileId={selected.id}
+                                    defaultTopic={selected.defaultTopic}
                                     topicsRev={topicsRev}
                                 />
                             </TabPanel>

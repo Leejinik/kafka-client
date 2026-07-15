@@ -383,8 +383,37 @@ function buildSectionsKo(): Section[] {
             ),
         },
         {
+            id: "special",
+            title: "8. 특수 발행",
+            body: (
+                <>
+                    <p><b>특수 발행</b> 탭은 WebUI의 특정 조작을 대신 재현합니다. 첫 번째 작업은 <b>장치 모니터링 ON/OFF</b> — 관리 콘솔에서 장치 모니터링을 껐다 켤 때 나가는 Kafka 메시지를 그대로 모방합니다.</p>
+                    <p>관측된 동작: 토글 한 번에 <M>liz.message.pipeline</M>로 두 메시지가 <b>같은 <M>time</M></b>으로 함께 나갑니다.</p>
+                    <ul>
+                        <li>① <M>DEVICE_UPDATED_NOTIFICATION</M> — <M>{`{ deviceIds:[...], restartService }`}</M></li>
+                        <li>② <M>SPECIFY_RULE_UPDATED_NOTIFICATION</M> — <M>{`{ specifyRuleId: null }`}</M></li>
+                    </ul>
+                    <p><b>모드</b> — <M>모니터링 켜기(ON)</M>는 <M>restartService=true</M>, <M>끄기(OFF)</M>는 <M>false</M>로 설정됩니다 (실제 소스 확인). 체크박스로 직접 바꿀 수 있습니다.</p>
+                    <Box kind="warn">
+                        <b>restartService=true</b>는 대상 장치의 <b>수집 서비스를 실제로 재시작</b>합니다. 운영 환경에서 특히 주의하세요.
+                    </Box>
+                    <p><b>장치 ID 입력</b> — 현장에서 뽑아온 ID를 그대로 붙여넣습니다 (쉼표/공백/줄바꿈/세미콜론 구분, 수십~수천 개). 유효한 int32만 남기고 잘못된 토큰·중복은 걸러서 개수로 보여줍니다.</p>
+                    <p><b>쪼개서 발행</b> — 큰 목록을 <M>묶음 크기</M>로 나눠 보냅니다. 한 묶음 = 한 번의 발행(그 묶음의 모든 ID가 하나의 DEVICE_UPDATED에 들어감).</p>
+                    <ul>
+                        <li><b>다음 N개 발행</b> — 한 묶음만 보내고 멈춤. <b>하나씩 확인하며</b> 진행할 때 (예: 1개 먼저 → 나머지 <M>남은 전체</M>).</li>
+                        <li><b>자동 발행</b> — 남은 것을 묶음 크기로 <b>반복</b>해서 보냄. <M>묶음 간 간격(ms)</M>으로 서버 부하 조절 (예: 1000개를 50개씩 20회). 시작 시 범위 확인 창이 뜹니다.</li>
+                        <li><b>오류 시 중지</b> (기본) — 실패하면 멈춤. 실패한 묶음은 커서를 넘기지 않아 <b>그대로 재시도</b> 가능.</li>
+                    </ul>
+                    <p><b>미리보기</b> — 다음에 나갈 두 메시지의 실제 JSON을 보여줍니다 (<M>uuid</M>·<M>time</M>은 발행 시각에 새로 생성). <b>발행 로그</b>에는 묶음별 성공/실패·파티션·오프셋이 남습니다.</p>
+                    <Box kind="tip">
+                        메시지는 <b>키 없이</b> 발행되고 파티션은 자동(-1)입니다 — 실제 콘솔과 동일. <M>SPECIFY_RULE 함께 발행</M> 체크를 끄면 DEVICE_UPDATED 하나만 보냅니다.
+                    </Box>
+                </>
+            ),
+        },
+        {
             id: "danger",
-            title: "8. 되돌릴 수 없는 작업",
+            title: "9. 되돌릴 수 없는 작업",
             body: (
                 <>
                     <Box kind="warn">
@@ -396,13 +425,14 @@ function buildSectionsKo(): Section[] {
                         <li><b>Offset → earliest/latest/timestamp/explicit</b> — 누락 또는 재처리 발생</li>
                         <li><b>파티션 재할당</b> — 대용량 데이터 이동, 클러스터 부하</li>
                         <li><b>반복 발행 (최대 속도)</b> — 안전장치 없음. 운영 토픽에 무한히 폭주할 수 있음</li>
+                        <li><b>특수 발행 (restartService=true)</b> — 대상 장치의 수집 서비스를 실제로 재시작. 자동 발행은 수백~수천 건을 한 번에 쏠 수 있음</li>
                     </ul>
                 </>
             ),
         },
         {
             id: "settings",
-            title: "9. 설정",
+            title: "10. 설정",
             body: (
                 <>
                     <p>설정 탭에서 다음을 관리합니다.</p>
@@ -423,7 +453,7 @@ function buildSectionsKo(): Section[] {
         },
         {
             id: "update",
-            title: "10. 자동 업데이트",
+            title: "11. 자동 업데이트",
             body: (
                 <>
                     <p>앱을 켤 때마다 GitHub Releases를 확인해 새 버전이 있으면 <b>자동으로 조용히 업데이트</b>됩니다 — 따로 묻지 않습니다. 새 <M>kafka-client.exe</M>를 같은 폴더에 받아 두고, 작은 <M>update.cmd</M> 헬퍼가 앱이 종료된 직후 파일을 교체한 뒤 자동으로 다시 실행합니다. 시작 직후 "내려받는 중…" 토스트만 잠깐 보이고 곧 새 버전으로 재시작됩니다.</p>
@@ -706,8 +736,37 @@ function buildSectionsEn(): Section[] {
             ),
         },
         {
+            id: "special",
+            title: "8. Special Publish",
+            body: (
+                <>
+                    <p>The <b>Special Publish</b> tab reproduces specific WebUI operations for you. The first operation is <b>Device monitoring ON/OFF</b> — it mimics the exact Kafka messages the Admin Console emits when you toggle device monitoring off/on.</p>
+                    <p>Observed behavior: one toggle sends two messages to <M>liz.message.pipeline</M> sharing the <b>same <M>time</M></b>:</p>
+                    <ul>
+                        <li>① <M>DEVICE_UPDATED_NOTIFICATION</M> — <M>{`{ deviceIds:[...], restartService }`}</M></li>
+                        <li>② <M>SPECIFY_RULE_UPDATED_NOTIFICATION</M> — <M>{`{ specifyRuleId: null }`}</M></li>
+                    </ul>
+                    <p><b>Mode</b> — <M>Turn ON</M> sets <M>restartService=true</M>, <M>OFF</M> sets <M>false</M> (source-confirmed). Override it with the checkbox.</p>
+                    <Box kind="warn">
+                        <b>restartService=true</b> actually <b>restarts the collector service</b> on the target devices. Take care on production.
+                    </Box>
+                    <p><b>Device IDs</b> — paste the IDs you pulled from the field as-is (comma / space / newline / semicolon separated, tens to thousands). Only valid int32s are kept; invalid tokens and duplicates are filtered and counted.</p>
+                    <p><b>Batching</b> — split a big list by <M>batch size</M>. One batch = one publish (all its IDs go into a single DEVICE_UPDATED).</p>
+                    <ul>
+                        <li><b>Send next N</b> — send one batch and stop. For <b>reviewing one at a time</b> (e.g. 1 first → then <M>all remaining</M>).</li>
+                        <li><b>Auto-run</b> — <b>repeat</b> over the remainder in batch-size chunks, with a <M>delay (ms)</M> between batches to pace server load (e.g. 1000 as 50×20). A scope-confirm dialog appears first.</li>
+                        <li><b>Stop on error</b> (default) — halt on failure; a failed batch does not advance the cursor, so it can be <b>retried as-is</b>.</li>
+                    </ul>
+                    <p><b>Preview</b> shows the actual JSON of the next messages (<M>uuid</M>/<M>time</M> regenerate at send). The <b>publish log</b> records per-batch ok/fail, partition, and offset.</p>
+                    <Box kind="tip">
+                        Messages are produced <b>keyless</b> with auto partition (-1) — same as the real console. Uncheck <M>Also publish SPECIFY_RULE</M> to send DEVICE_UPDATED only.
+                    </Box>
+                </>
+            ),
+        },
+        {
             id: "danger",
-            title: "8. Irreversible actions",
+            title: "9. Irreversible actions",
             body: (
                 <>
                     <Box kind="warn">
@@ -719,13 +778,14 @@ function buildSectionsEn(): Section[] {
                         <li><b>Reset offsets (earliest / latest / timestamp / explicit)</b> — gaps or re-processing</li>
                         <li><b>Reassignment</b> — heavy data movement</li>
                         <li><b>Loop produce (max throughput)</b> — no safety limit; can flood a prod topic</li>
+                        <li><b>Special Publish (restartService=true)</b> — actually restarts the collector service on target devices; auto-run can fire hundreds/thousands at once</li>
                     </ul>
                 </>
             ),
         },
         {
             id: "settings",
-            title: "9. Settings",
+            title: "10. Settings",
             body: (
                 <>
                     <p>The Settings tab manages the following.</p>
@@ -746,7 +806,7 @@ function buildSectionsEn(): Section[] {
         },
         {
             id: "update",
-            title: "10. Auto-update",
+            title: "11. Auto-update",
             body: (
                 <>
                     <p>On every launch the app checks GitHub Releases for a newer version and, if one exists, <b>updates silently</b> — no prompt. It downloads the new <M>kafka-client.exe</M> next to the current one; a tiny <M>update.cmd</M> helper waits for the app to exit, swaps the file, and re-launches it. You only see a brief "downloading…" toast at startup before it restarts on the new version.</p>

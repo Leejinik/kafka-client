@@ -380,6 +380,23 @@ func (a *App) GetLoopProduceStatus(profileID string) kafka.LoopProduceStatus {
 	return a.manager.GetLoopProduceStatus(profileID)
 }
 
+// --- Special publish (liz canned ops) -----------------------------------
+
+// PublishMonitorTogglePair replicates the Admin Console's device-monitoring
+// ON/OFF toggle for one chunk of device ids: it produces the
+// DEVICE_UPDATED_NOTIFICATION + SPECIFY_RULE_UPDATED_NOTIFICATION pair to the
+// target topic and returns the exact JSON that was sent plus ack coordinates.
+func (a *App) PublishMonitorTogglePair(profileID string, req kafka.MonitorTogglePairRequest) (kafka.MonitorTogglePairResult, error) {
+	return a.manager.PublishMonitorTogglePair(a.ctx, profileID, req)
+}
+
+// PreviewMonitorTogglePair builds the same pair WITHOUT producing it, so the UI
+// can show exactly what the next send will look like. uuid/time are regenerated
+// at actual send time.
+func (a *App) PreviewMonitorTogglePair(req kafka.MonitorTogglePairRequest) (kafka.MonitorTogglePairResult, error) {
+	return a.manager.PreviewMonitorTogglePair(req)
+}
+
 // --- Auto-update --------------------------------------------------------
 
 // GetCurrentVersion returns the build-time version (or "dev" for local builds).
