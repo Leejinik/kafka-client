@@ -101,7 +101,9 @@ export function SpecialPublishPage({ lang, profileId, defaultTopic, topicsRev }:
     const [topic, setTopic] = useState<string>("");
 
     const [mode, setMode] = useState<Mode>("off");
-    const [restartService, setRestartService] = useState<boolean>(false);
+    // restartService is fully determined by the ON/OFF mode (source-confirmed:
+    // enable → true, disable → false), so it's derived, not a separate control.
+    const restartService = mode === "on";
     const [includeSpecifyRule, setIncludeSpecifyRule] = useState(true);
     const [senderType, setSenderType] = useState<string>("ADMIN_CONSOLE");
     const [showAdvanced, setShowAdvanced] = useState(false);
@@ -147,10 +149,6 @@ export function SpecialPublishPage({ lang, profileId, defaultTopic, topicsRev }:
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [profileId, topicsRev]);
-
-    // Mode radio drives restartService (ON→true, OFF→false); the checkbox below
-    // can still override it independently.
-    useEffect(() => { setRestartService(mode === "on"); }, [mode]);
 
     // Stop any auto-run if the page unmounts (e.g. switching profiles), so the
     // loop can't keep producing / setState after teardown.
@@ -365,11 +363,19 @@ export function SpecialPublishPage({ lang, profileId, defaultTopic, topicsRev }:
                             <input type="radio" name="mtmode" checked={mode === "on"} onChange={() => setMode("on")} disabled={locked} />
                             {t(lang, "special.mode.on")}
                         </label>
-                        <span className="muted" style={{ fontSize: 11 }}>·</span>
-                        <label className="checkbox" style={{ cursor: "pointer" }} title={t(lang, "special.restart.hint")}>
-                            <input type="checkbox" checked={restartService} onChange={(e) => setRestartService(e.target.checked)} disabled={locked} />
-                            <span className="mono">restartService = {String(restartService)}</span>
-                        </label>
+                        <span className="muted" style={{ fontSize: 11 }}>→</span>
+                        <span
+                            className="mono"
+                            title={t(lang, "special.restart.hint")}
+                            style={{
+                                fontSize: 12, padding: "2px 8px", borderRadius: 4,
+                                border: "1px solid var(--border)",
+                                color: restartService ? "var(--danger)" : "var(--text-dim)",
+                                fontWeight: restartService ? 600 : 400,
+                            }}
+                        >
+                            restartService = {String(restartService)}
+                        </span>
                     </div>
                     <div className="row" style={{ gap: 16, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
                         <label className="checkbox" style={{ cursor: "pointer" }} title={t(lang, "special.specifyRule.hint")}>

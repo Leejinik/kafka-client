@@ -393,7 +393,7 @@ function buildSectionsKo(): Section[] {
                         <li>① <M>DEVICE_UPDATED_NOTIFICATION</M> — <M>{`{ deviceIds:[...], restartService }`}</M></li>
                         <li>② <M>SPECIFY_RULE_UPDATED_NOTIFICATION</M> — <M>{`{ specifyRuleId: null }`}</M></li>
                     </ul>
-                    <p><b>모드</b> — <M>모니터링 켜기(ON)</M>는 <M>restartService=true</M>, <M>끄기(OFF)</M>는 <M>false</M>로 설정됩니다 (실제 소스 확인). 체크박스로 직접 바꿀 수 있습니다.</p>
+                    <p><b>모드</b> — <M>모니터링 켜기(ON)</M>는 <M>restartService=true</M>, <M>끄기(OFF)</M>는 <M>false</M>로 <b>자동 결정</b>됩니다 (실제 소스 확인). 옆에 어떤 값이 나갈지 읽기전용으로 표시됩니다.</p>
                     <Box kind="warn">
                         <b>restartService=true</b>는 대상 장치의 <b>수집 서비스를 실제로 재시작</b>합니다. 운영 환경에서 특히 주의하세요.
                     </Box>
@@ -746,7 +746,7 @@ function buildSectionsEn(): Section[] {
                         <li>① <M>DEVICE_UPDATED_NOTIFICATION</M> — <M>{`{ deviceIds:[...], restartService }`}</M></li>
                         <li>② <M>SPECIFY_RULE_UPDATED_NOTIFICATION</M> — <M>{`{ specifyRuleId: null }`}</M></li>
                     </ul>
-                    <p><b>Mode</b> — <M>Turn ON</M> sets <M>restartService=true</M>, <M>OFF</M> sets <M>false</M> (source-confirmed). Override it with the checkbox.</p>
+                    <p><b>Mode</b> — <M>Turn ON</M> <b>auto-sets</b> <M>restartService=true</M>, <M>OFF</M> sets <M>false</M> (source-confirmed). The resulting value is shown read-only next to the mode.</p>
                     <Box kind="warn">
                         <b>restartService=true</b> actually <b>restarts the collector service</b> on the target devices. Take care on production.
                     </Box>
