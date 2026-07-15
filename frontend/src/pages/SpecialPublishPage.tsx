@@ -15,8 +15,6 @@ interface Props {
     topicsRev?: number;
 }
 
-type Mode = "on" | "off";
-
 // One published (or attempted) pair (or single message when SPECIFY_RULE is off).
 interface BatchLog {
     no: number;
@@ -100,10 +98,9 @@ export function SpecialPublishPage({ lang, profileId, defaultTopic, topicsRev }:
     const [topics, setTopics] = useState<string[]>([]);
     const [topic, setTopic] = useState<string>("");
 
-    const [mode, setMode] = useState<Mode>("off");
-    // restartService is fully determined by the ON/OFF mode (source-confirmed:
-    // enable → true, disable → false), so it's derived, not a separate control.
-    const restartService = mode === "on";
+    // restartService is the actual field on the wire: true = monitoring ON
+    // (collector service restarts), false = monitoring OFF (source-confirmed).
+    const [restartService, setRestartService] = useState(false);
     const [includeSpecifyRule, setIncludeSpecifyRule] = useState(true);
     const [senderType, setSenderType] = useState<string>("ADMIN_CONSOLE");
     const [showAdvanced, setShowAdvanced] = useState(false);
@@ -267,7 +264,6 @@ export function SpecialPublishPage({ lang, profileId, defaultTopic, topicsRev }:
             topic: snapTopic,
             remaining,
             pairs,
-            mode: snapRestart ? "ON" : "OFF",
             restart: String(snapRestart),
         });
         if (!window.confirm(summary)) return;
@@ -351,31 +347,18 @@ export function SpecialPublishPage({ lang, profileId, defaultTopic, topicsRev }:
                     {t(lang, "special.op.desc")}
                 </div>
 
-                {/* Mode + restartService */}
+                {/* 모니터링 재시작 (restartService) */}
                 <div className="form-row">
-                    <label>{t(lang, "special.mode")}</label>
+                    <label title={t(lang, "special.restart.hint")}>{t(lang, "special.restart")}</label>
                     <div className="row" style={{ gap: 16, alignItems: "center", flexWrap: "wrap" }}>
                         <label className="checkbox" style={{ cursor: "pointer" }}>
-                            <input type="radio" name="mtmode" checked={mode === "off"} onChange={() => setMode("off")} disabled={locked} />
-                            {t(lang, "special.mode.off")}
+                            <input type="radio" name="mtrestart" checked={!restartService} onChange={() => setRestartService(false)} disabled={locked} />
+                            <span className="mono">restartService = false</span>
                         </label>
                         <label className="checkbox" style={{ cursor: "pointer" }}>
-                            <input type="radio" name="mtmode" checked={mode === "on"} onChange={() => setMode("on")} disabled={locked} />
-                            {t(lang, "special.mode.on")}
+                            <input type="radio" name="mtrestart" checked={restartService} onChange={() => setRestartService(true)} disabled={locked} />
+                            <span className="mono" style={{ color: restartService ? "var(--danger)" : undefined, fontWeight: restartService ? 600 : 400 }}>restartService = true</span>
                         </label>
-                        <span className="muted" style={{ fontSize: 11 }}>→</span>
-                        <span
-                            className="mono"
-                            title={t(lang, "special.restart.hint")}
-                            style={{
-                                fontSize: 12, padding: "2px 8px", borderRadius: 4,
-                                border: "1px solid var(--border)",
-                                color: restartService ? "var(--danger)" : "var(--text-dim)",
-                                fontWeight: restartService ? 600 : 400,
-                            }}
-                        >
-                            restartService = {String(restartService)}
-                        </span>
                     </div>
                     <div className="row" style={{ gap: 16, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
                         <label className="checkbox" style={{ cursor: "pointer" }} title={t(lang, "special.specifyRule.hint")}>
