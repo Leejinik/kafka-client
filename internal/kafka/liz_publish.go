@@ -32,6 +32,19 @@ import (
 // the SPECIFY_RULE_UPDATED_NOTIFICATION that trails a monitoring toggle.
 var defaultSpecifyRuleRecipientTypes = []string{"ADMIN_CONSOLE", "API_SERVER", "ADMIN_MOBILE"}
 
+// toolUUIDPrefix is a fingerprint stamped into every message's uuid so tool-sent
+// traffic is distinguishable from the real Admin Console's. liz does not validate
+// the uuid, so we reuse its first block (8 hex chars, kept UUID-shaped) as a
+// recognizable, greppable marker: our messages' uuid starts with "c0decafe-".
+const toolUUIDPrefix = "c0decafe"
+
+// toolUUID returns a random UUID with its first block overwritten by the tool
+// fingerprint, e.g. "c0decafe-1a2b-4c3d-8e4f-0123456789ab".
+func toolUUID() string {
+	u := uuid.NewString() // 8-4-4-4-12; index 8 is the first "-"
+	return toolUUIDPrefix + u[len(toolUUIDPrefix):]
+}
+
 // lizHeader mirrors the liz.message.pipeline envelope header. Field order and
 // the null / empty-array distinctions match the on-wire form (json.Marshal keeps
 // struct field order; nil *int64 → null; a non-nil empty slice → []).
@@ -112,7 +125,7 @@ func (r MonitorTogglePairRequest) build(now int64) (deviceUpdatedMsg, specifyRul
 			RecipientTypes: []string{},
 			RecipientIds:   []int64{},
 			SenderType:     sender,
-			Uuid:           uuid.NewString(),
+			Uuid:           toolUUID(),
 		},
 		DeviceIds:      ids,
 		RestartService: r.RestartService,
@@ -126,7 +139,7 @@ func (r MonitorTogglePairRequest) build(now int64) (deviceUpdatedMsg, specifyRul
 			RecipientTypes: append([]string{}, defaultSpecifyRuleRecipientTypes...),
 			RecipientIds:   []int64{},
 			SenderType:     sender,
-			Uuid:           uuid.NewString(),
+			Uuid:           toolUUID(),
 		},
 	}
 	return dev, spec

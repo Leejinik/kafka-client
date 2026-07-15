@@ -401,12 +401,13 @@ function buildSectionsKo(): Section[] {
                     <p><b>쪼개서 발행</b> — 큰 목록을 <M>묶음 크기</M>로 나눠 보냅니다. 한 묶음 = 한 번의 발행(그 묶음의 모든 ID가 하나의 DEVICE_UPDATED에 들어감).</p>
                     <ul>
                         <li><b>다음 N개 발행</b> — 한 묶음만 보내고 멈춤. <b>하나씩 확인하며</b> 진행할 때 (예: 1개 먼저 → 나머지 <M>남은 전체</M>).</li>
-                        <li><b>자동 발행</b> — 남은 것을 묶음 크기로 <b>반복</b>해서 보냄. <M>묶음 간 간격(ms)</M>으로 서버 부하 조절 (예: 1000개를 50개씩 20회). 시작 시 범위 확인 창이 뜹니다.</li>
+                        <li><b>자동 발행</b> — 남은 것을 묶음 크기로 <b>반복</b>해서 보냄. <M>묶음 간 간격(초)</M>으로 서버 부하 조절 (기본 5초, 예: 1000개를 50개씩 20회). 시작 시 범위 확인 창이 뜹니다.</li>
                         <li><b>오류 시 중지</b> (기본) — 실패하면 멈춤. 실패한 묶음은 커서를 넘기지 않아 <b>그대로 재시도</b> 가능.</li>
                     </ul>
                     <p><b>미리보기</b> — 다음에 나갈 두 메시지의 실제 JSON을 보여줍니다 (<M>uuid</M>·<M>time</M>은 발행 시각에 새로 생성). <b>발행 로그</b>에는 묶음별 성공/실패·파티션·오프셋이 남습니다.</p>
                     <Box kind="tip">
-                        메시지는 <b>키 없이</b> 발행되고 파티션은 자동(-1)입니다 — 실제 콘솔과 동일. <M>SPECIFY_RULE 함께 발행</M> 체크를 끄면 DEVICE_UPDATED 하나만 보냅니다.
+                        메시지는 <b>키 없이</b> 발행되고 파티션은 자동(-1)입니다 — 실제 콘솔과 동일. <M>SPECIFY_RULE 함께 발행</M> 체크를 끄면 DEVICE_UPDATED 하나만 보냅니다.<br />
+                        <b>툴 지문</b> — 이 툴이 보낸 메시지의 <M>uuid</M>는 항상 <M>c0decafe-</M> 로 시작합니다. liz가 uuid를 검증하지 않으므로, 조회 탭에서 이 값으로 "kafka-client가 쏜 메시지"를 구분·검색할 수 있습니다.
                     </Box>
                 </>
             ),
@@ -754,12 +755,13 @@ function buildSectionsEn(): Section[] {
                     <p><b>Batching</b> — split a big list by <M>batch size</M>. One batch = one publish (all its IDs go into a single DEVICE_UPDATED).</p>
                     <ul>
                         <li><b>Send next N</b> — send one batch and stop. For <b>reviewing one at a time</b> (e.g. 1 first → then <M>all remaining</M>).</li>
-                        <li><b>Auto-run</b> — <b>repeat</b> over the remainder in batch-size chunks, with a <M>delay (ms)</M> between batches to pace server load (e.g. 1000 as 50×20). A scope-confirm dialog appears first.</li>
+                        <li><b>Auto-run</b> — <b>repeat</b> over the remainder in batch-size chunks, with a <M>delay (sec)</M> between batches to pace server load (default 5s, e.g. 1000 as 50×20). A scope-confirm dialog appears first.</li>
                         <li><b>Stop on error</b> (default) — halt on failure; a failed batch does not advance the cursor, so it can be <b>retried as-is</b>.</li>
                     </ul>
                     <p><b>Preview</b> shows the actual JSON of the next messages (<M>uuid</M>/<M>time</M> regenerate at send). The <b>publish log</b> records per-batch ok/fail, partition, and offset.</p>
                     <Box kind="tip">
-                        Messages are produced <b>keyless</b> with auto partition (-1) — same as the real console. Uncheck <M>Also publish SPECIFY_RULE</M> to send DEVICE_UPDATED only.
+                        Messages are produced <b>keyless</b> with auto partition (-1) — same as the real console. Uncheck <M>Also publish SPECIFY_RULE</M> to send DEVICE_UPDATED only.<br />
+                        <b>Tool fingerprint</b> — every message this tool sends has a <M>uuid</M> starting with <M>c0decafe-</M>. Since liz doesn't validate the uuid, use it in the Consume tab to spot/search messages sent by kafka-client.
                     </Box>
                 </>
             ),

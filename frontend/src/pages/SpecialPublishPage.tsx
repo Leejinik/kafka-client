@@ -110,7 +110,7 @@ export function SpecialPublishPage({ lang, profileId, defaultTopic, topicsRev }:
 
     const [chunkSize, setChunkSize] = useState("1");
     const [useAllRemaining, setUseAllRemaining] = useState(false);
-    const [delayMs, setDelayMs] = useState("500");
+    const [delaySec, setDelaySec] = useState("5");
     const [stopOnError, setStopOnError] = useState(true);
 
     const [cursor, setCursor] = useState(0); // number of ids consumed so far
@@ -248,7 +248,7 @@ export function SpecialPublishPage({ lang, profileId, defaultTopic, topicsRev }:
         // change the run.
         const snapAll = useAllRemaining;
         const snapChunk = chunkN;
-        const snapDelay = Math.max(0, Number(delayMs) || 0);
+        const snapDelay = Math.max(0, Number(delaySec) || 0) * 1000; // sec → ms
         const snapStopOnError = stopOnError;
         const snapRestart = restartService;
         const snapSender = senderType;
@@ -424,12 +424,12 @@ export function SpecialPublishPage({ lang, profileId, defaultTopic, topicsRev }:
                         <span className="muted" style={{ fontSize: 11 }}>·</span>
                         <span className="muted" style={{ fontSize: 12 }}>{t(lang, "special.delay")}</span>
                         <input
-                            type="number" min={0} value={delayMs}
-                            onChange={(e) => setDelayMs(e.target.value)}
+                            type="number" min={0} value={delaySec}
+                            onChange={(e) => setDelaySec(e.target.value)}
                             disabled={locked}
                             style={{ width: 90 }}
                         />
-                        <span className="muted" style={{ fontSize: 11 }}>ms</span>
+                        <span className="muted" style={{ fontSize: 11 }}>{t(lang, "special.delayUnit")}</span>
                         <label className="checkbox" style={{ cursor: "pointer", marginLeft: 6 }}>
                             <input type="checkbox" checked={stopOnError} onChange={(e) => setStopOnError(e.target.checked)} disabled={locked} />
                             {t(lang, "special.stopOnError")}

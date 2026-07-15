@@ -53,6 +53,16 @@ func TestMonitorTogglePairGolden(t *testing.T) {
 	if dev.Header.Uuid == spec.Header.Uuid {
 		t.Errorf("pair uuids must differ, both = %s", dev.Header.Uuid)
 	}
+
+	// Both uuids carry the tool fingerprint and stay UUID-shaped (36 chars).
+	for _, u := range []string{dev.Header.Uuid, spec.Header.Uuid} {
+		if len(u) != 36 {
+			t.Errorf("uuid not 36 chars: %q (len %d)", u, len(u))
+		}
+		if u[:len(toolUUIDPrefix)] != toolUUIDPrefix {
+			t.Errorf("uuid missing tool fingerprint %q: %s", toolUUIDPrefix, u)
+		}
+	}
 }
 
 // TestMonitorToggleOnRestartTrue confirms the ON path stamps restartService=true.
