@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	"kafka-client/internal/certutil"
@@ -65,13 +66,28 @@ func (a *App) startup(ctx context.Context) {
 	a.updater = updater.New(updater.Config{
 		Owner:          "Leejinik",
 		Repo:           "kafka-client",
-		AssetName:      "kafka-client.exe",
+		AssetName:      releaseAssetName(),
 		CurrentVersion: a.version,
 		ConfigDir:      configDir,
 	})
 	// Sweep any swap leftovers (e.g. <exe>.old parked by the in-place update).
 	if exe, err := os.Executable(); err == nil {
 		a.updater.CleanupLeftovers(exe)
+	}
+}
+
+// releaseAssetName is the GitHub Release asset this build should look for. It
+// must match the filenames produced by .github/workflows/release.yml character
+// for character: when the GitHub API is rate-limited the updater falls back to
+// assembling the download URL from this name (see internal/updater/updater.go).
+func releaseAssetName() string {
+	switch runtime.GOOS {
+	case "linux":
+		// e.g. kafka-client-linux-amd64. GOARCH keeps this honest if an arm64
+		// job is ever added to the workflow.
+		return "kafka-client-linux-" + runtime.GOARCH
+	default:
+		return "kafka-client.exe"
 	}
 }
 
@@ -483,6 +499,13 @@ func (a *App) MarkReleaseNotesSeen() error {
 // replacing executables (in the field it left the app with no runnable binary).
 // It fires at most once per install, guarded by a marker file in the config dir.
 func (a *App) ShowUpdateModeNoticeOnce() {
+	// Windows-only: the notice explains why the self-replacing updater was
+	// dropped, and the corporate EDR product it refers to only runs on Windows.
+	// Other platforms never had a self-replacing updater in the first place (see
+	// internal/updater/apply_other.go), so there is nothing to explain.
+	if runtime.GOOS != "windows" {
+		return
+	}
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, ".kafka-client")
 	marker := filepath.Join(dir, "update-mode-notice.seen")

@@ -22,6 +22,12 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 wails doctor
 ```
 
+### Linux (Ubuntu 24.04 / 26.04)
+```bash
+sudo apt install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+```
+
 ### macOS
 ```bash
 xcode-select --install
@@ -31,7 +37,10 @@ echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 wails doctor
 ```
 
-> **Cross-compilation to darwin from Windows is NOT supported.** Build the `.app` on a Mac.
+> **Every target must be built on its own OS — there is no cross-compilation.**
+> Wails' Linux and macOS backends are cgo and link the system webview through
+> pkg-config (`webkit2gtk-4.1` + `gtk+-3.0` on Linux), so a Windows host has no
+> sysroot to build them against. Only the Windows target is pure Go.
 
 ## Build
 
@@ -40,6 +49,44 @@ wails doctor
 wails build
 # → build/bin/kafka-client.exe
 ```
+
+```bash
+# Linux (single binary)
+wails build -tags webkit2_41
+# → build/bin/kafka-client
+```
+
+`-tags webkit2_41` is **required**. Ubuntu dropped `webkit2gtk-4.0` in 24.04 and
+Wails v2 still points pkg-config at 4.0 by default, so without the tag the build
+fails with `webkit2gtk-4.0.pc not found`. (`wails doctor` reports the same missing
+4.0 package — that warning is safe to ignore; only `doctor` checks it, `build`
+does not.)
+
+To *run* the binary the machine needs `libwebkit2gtk-4.1-0`, `libgtk-3-0t64` and
+`libsoup-3.0-0` (the full `DT_NEEDED` set is glib/gtk3/webkit2gtk-4.1/soup3).
+A stock Ubuntu 24.04+ desktop already has them; on a server or minimal install
+run `sudo apt install libwebkit2gtk-4.1-0`.
+
+Two font packages matter for the UI to look right, and both come with a desktop
+install but not a minimal one: `fonts-noto-cjk` (Korean — every label in this app
+is Hangul) and `fonts-noto-color-emoji` (the toolbar and menu labels use emoji;
+without it they render as ▯). `xdg-utils` is needed for the release-page link to
+open a browser.
+
+Released Linux binaries are built by CI on **ubuntu-24.04**, which sets the glibc
+floor at 2.34. Two things gate where a binary runs, and the stricter one wins:
+
+| gate | floor |
+|---|---|
+| glibc 2.34 | Ubuntu 22.04+ |
+| `libwebkit2gtk-4.1.so.0` | Ubuntu 24.04 by default; **22.04 needs it installed explicitly** |
+
+Ubuntu 22.04 does carry `libwebkit2gtk-4.1-0` (SRU backport, 2.50.x) so the
+binary runs there, but 22.04 desktops ship the 4.0 series by default — install it
+by hand, and note GTK is packaged as `libgtk-3-0` there, not `libgtk-3-0t64`.
+A binary you build locally on 26.04 links against that machine's newer glibc and
+will **not** run on 24.04, so use the CI artifact for distribution and keep local
+builds for development.
 
 ```bash
 # macOS (.app)
