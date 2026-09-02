@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -81,4 +82,53 @@ func (m *Manager) MessageRates(ctx context.Context, profileID string, topics []s
 		})
 	}
 	return out, nil
+}
+
+// PartitionEndOffset is one partition's current end offset (one past the last
+// record), as reported by the partition leader.
+type PartitionEndOffset struct {
+	Partition int32  `json:"partition"`
+	EndOffset int64  `json:"endOffset"`
+	Err       string `json:"err,omitempty"`
+}
+
+// EndOffsetsSnapshot is a point-in-time picture of a topic's end offsets.
+// SampledAtMs is the client wall clock right after the broker replied, so
+// two snapshots can be turned into an ingress rate (Δoffset / Δtime) without
+// consuming a single record — the only broker traffic is one ListOffsets
+// request per partition leader.
+type EndOffsetsSnapshot struct {
+	Topic       string               `json:"topic"`
+	SampledAtMs int64                `json:"sampledAtMs"`
+	Partitions  []PartitionEndOffset `json:"partitions"`
+}
+
+// TopicEndOffsets returns the current end offset of every partition of a
+// topic. Used by the ingress rate meter: it is the zero-load alternative to
+// tail -f for answering "how many messages per second are landing here?".
+func (m *Manager) TopicEndOffsets(ctx context.Context, profileID, topic string) (EndOffsetsSnapshot, error) {
+	c, err := m.Get(profileID)
+	if err != nil {
+		return EndOffsetsSnapshot{}, err
+	}
+	sctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	ends, err := c.adm.ListEndOffsets(sctx, topic)
+	if err != nil {
+		return EndOffsetsSnapshot{}, fmt.Errorf("end offsets: %w", err)
+	}
+	snap := EndOffsetsSnapshot{Topic: topic, SampledAtMs: time.Now().UnixMilli()}
+	for _, lo := range ends[topic] {
+		p := PartitionEndOffset{Partition: lo.Partition, EndOffset: lo.Offset}
+		if lo.Err != nil {
+			p.Err = lo.Err.Error()
+		}
+		snap.Partitions = append(snap.Partitions, p)
+	}
+	sort.Slice(snap.Partitions, func(i, j int) bool { return snap.Partitions[i].Partition < snap.Partitions[j].Partition })
+	if snap.Partitions == nil {
+		snap.Partitions = []PartitionEndOffset{}
+	}
+	return snap, nil
 }

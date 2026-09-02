@@ -187,7 +187,7 @@ function buildSectionsKo(): Section[] {
                         <li>펼친 그룹 카드 → Offset 변경 / 그룹 삭제</li>
                     </ul>
                     <p><b>ms 단위 config 입력 (🧮)</b> — 토픽 생성/수정 다이얼로그에서 <M>retention.ms</M>·<M>segment.ms</M>처럼 <M>.ms</M>로 끝나는 항목 옆 <M>🧮</M> 버튼을 누르면 <b>일·시·분</b> ± 버튼으로 값을 쌓아 ms로 환산해 넣을 수 있습니다 (외부 계산기 불필요). 각 단위는 0 미만으로 내려가지 않으며 초·ms 단위는 제외됩니다.</p>
-                    <p><b>msg/sec 컬럼</b> — 최근 60초 메시지 수 ÷ 60 (1초마다 갱신). End offset 변화량 기반.</p>
+                    <p><b>msg/sec 컬럼</b> — 최근 60초 메시지 수 ÷ 60 (1초마다 갱신). End offset 변화량 기반. 순간 속도·파티션별 분포가 필요하면 우클릭 → <M>유입 속도 측정...</M> (6장 참고).</p>
                     <p><b>그룹 카드 partition Lag 표</b>는 컨슈머 그룹별로 partition 단위 Committed / End / Lag를 보여줍니다. 멤버가 표시되며 partition 할당이 없는 멤버는 <M>(할당 없음 / standby)</M>로 표시됩니다.</p>
                     <p><b>Committed / End Offset / Lag 셀에 hover</b>하면 10초 간격으로 측정한 <b>초당 변화량</b>이 툴팁으로 표시됩니다. End Offset은 발행 속도(<M>publish/sec</M>), Committed는 소비 속도, Lag는 lag 증감 추이 파악용. 펼친 직후 첫 샘플은 기준값이라 두 번째 SLOW tick부터 값이 나옵니다.</p>
                     <p className="muted" style={{ fontSize: 12 }}>백그라운드 갱신: FAST 1초 (파티션 leader/ISR, msg/sec, 진행 중 재할당) / SLOW 10초 (토픽 목록, 그룹 lag).</p>
@@ -291,6 +291,14 @@ function buildSectionsKo(): Section[] {
                         <li><b>마우스 휠</b> → follow 해제, 그 자리에 멈춤</li>
                         <li><b>Shift + G</b> → 다시 맨 아래로 점프 + follow 재개</li>
                         <li><b>Ctrl + C</b> (이스터에그) → SIGINT처럼 tail 종료. 텍스트 선택 중이거나 입력창 포커스 시엔 일반 복사로 동작</li>
+                    </ul>
+                    <p><b>📈 유입 속도 측정 (tail -f 대신)</b> — 툴바의 <M>📈 유입 속도</M> 버튼(또는 토픽 탭 우클릭 → <M>유입 속도 측정...</M>)을 누르면 선택한 토픽에 <b>초당 몇 건이 들어오는지</b>를 보여주는 창이 뜹니다. 메시지를 한 건도 가져오지 않고 파티션별 <b>End offset 변화량 ÷ 경과 시간</b>으로 계산하므로, 바쁜 토픽에 tail -f를 걸어 툴이 멈추는 일 없이 유입 속도만 볼 수 있습니다 (틱마다 ListOffsets 요청 1회가 전부).</p>
+                    <ul>
+                        <li>측정 간격 1 / 2 / 5 / 10초. 첫 샘플은 기준값이라 두 번째 틱부터 값이 나옵니다</li>
+                        <li><b>현재</b>(최근 틱) / <b>평균</b>(시작 이후) / <b>최대</b> / <b>누적 유입</b> / <b>경과</b> + 최근 2분 막대 그래프</li>
+                        <li>파티션별 End offset · 최근 틱 증가량 · msg/s · 비중 → 특정 파티션으로 쏠리는지 바로 확인</li>
+                        <li>창을 닫지 않고 토픽을 바꿔 가며 측정 가능. 일시정지 / 초기화 버튼</li>
+                        <li>반복 발행의 <b>속도</b>는 툴이 밀어넣는 쪽 수치이고, 이 창은 실제 토픽에 <b>도착하는 쪽</b> 수치입니다. 둘을 나란히 두면 발행 병목인지 브로커 쪽 문제인지 구분됩니다</li>
                     </ul>
 
                     <p><b>liz.message.pipeline 필터</b> — 토픽으로 <M>liz.message.pipeline</M>을 고르면 검색줄 아래에 <b>필드 인지 필터 패널</b>이 뜹니다 (다른 토픽에선 숨김). tail -f로 흘려두고 원하는 메시지만 골라 볼 때 유용합니다.</p>
@@ -541,7 +549,7 @@ function buildSectionsEn(): Section[] {
                         <li>Group card in expanded view → reset offsets / delete group</li>
                     </ul>
                     <p><b>Entering ms configs (🧮)</b> — in the create/edit topic dialog, fields ending in <M>.ms</M> (<M>retention.ms</M>, <M>segment.ms</M>…) show a <M>🧮</M> button: add up <b>days / hours / minutes</b> with ± buttons and it fills in the millisecond value (no external calculator). Each unit can't go below zero, and seconds/ms are intentionally excluded.</p>
-                    <p><b>msg/sec column</b> — messages in the last 60s ÷ 60 (refreshes every 1s), computed from end-offset deltas.</p>
+                    <p><b>msg/sec column</b> — messages in the last 60s ÷ 60 (refreshes every 1s), computed from end-offset deltas. For an instantaneous rate with a per-partition breakdown, right-click → <M>Measure ingress rate...</M> (see section 6).</p>
                     <p><b>Group card partition lag table</b> shows per-partition Committed / End / Lag. Members are listed; members without an assignment show as <M>(no assignment / standby)</M>.</p>
                     <p><b>Hover the Committed / End Offset / Lag cells</b> on a group card to see the <b>per-second delta</b> measured over the 10s SLOW tick interval. End Offset shows publish rate (<M>publish/sec</M>), Committed shows consume rate, Lag shows whether lag is growing or shrinking. The first sample after expand is the baseline — values appear from the second SLOW tick onward.</p>
                     <p className="muted" style={{ fontSize: 12 }}>Background refresh: FAST 1s (partition leader/ISR, msg/sec, inflight reassignments) / SLOW 10s (topic list, group lag).</p>
@@ -645,6 +653,14 @@ function buildSectionsEn(): Section[] {
                         <li><b>Mouse wheel</b> → pauses follow, freezes at that position</li>
                         <li><b>Shift + G</b> → snaps back to bottom and resumes follow</li>
                         <li><b>Ctrl + C</b> (easter egg) → stops tail like SIGINT. When text is selected or an input has focus it falls back to normal copy</li>
+                    </ul>
+                    <p><b>📈 Ingress rate meter (instead of tail -f)</b> — the <M>📈 Ingress rate</M> toolbar button (or right-click a topic on the Topics tab → <M>Measure ingress rate...</M>) opens a window showing <b>how many messages per second are landing</b> on the selected topic. Nothing is consumed: it is computed from per-partition <b>end-offset deltas ÷ elapsed time</b>, so you can watch the rate of a busy topic without tail -f overwhelming the tool (one ListOffsets request per tick is all the traffic).</p>
+                    <ul>
+                        <li>Interval 1 / 2 / 5 / 10 s. The first sample is the baseline; values appear from the second tick</li>
+                        <li><b>Current</b> (last tick) / <b>Average</b> (since start) / <b>Peak</b> / <b>Total in</b> / <b>Elapsed</b> + a 2-minute bar sparkline</li>
+                        <li>Per-partition end offset · last-tick delta · msg/s · share → spot partition skew at a glance</li>
+                        <li>Switch topics without closing the window; Pause / Reset buttons</li>
+                        <li>Loop-produce's <b>Rate</b> is what this tool pushes; this meter is what actually <b>arrives</b> on the topic. Side by side they tell a producer bottleneck from a broker-side one</li>
                     </ul>
 
                     <p><b>liz.message.pipeline filter</b> — pick <M>liz.message.pipeline</M> as the topic and a <b>field-aware filter panel</b> appears below the search bar (hidden for other topics). Handy for keeping a tail -f running and only watching the messages you care about.</p>

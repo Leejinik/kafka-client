@@ -233,6 +233,13 @@ func (a *App) MessageRates(profileID string, topics []string, lookbackMs int64) 
 	return a.manager.MessageRates(a.ctx, profileID, topics, lookbackMs)
 }
 
+// TopicEndOffsets returns a point-in-time snapshot of every partition's end
+// offset. The frontend rate meter polls this to measure ingress msg/sec
+// without consuming records.
+func (a *App) TopicEndOffsets(profileID, topic string) (kafka.EndOffsetsSnapshot, error) {
+	return a.manager.TopicEndOffsets(a.ctx, profileID, topic)
+}
+
 // --- Topic admin --------------------------------------------------------
 
 func (a *App) DescribeTopic(profileID, topic string) (kafka.TopicDescribe, error) {

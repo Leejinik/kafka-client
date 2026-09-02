@@ -14,6 +14,7 @@ import {
 import { AdvancedSearchDialog } from "../components/AdvancedSearchDialog";
 import { ContextMenu } from "../components/ContextMenu";
 import { SaveMessageDialog } from "../components/SaveMessageDialog";
+import { RateMeterDialog } from "../components/RateMeterDialog";
 import { TimestampConverter } from "../components/TimestampConverter";
 import { formatLocalHuman, withMsTooltips } from "../lib/formatTime";
 import { LizFilterPanel } from "../components/LizFilterPanel";
@@ -178,6 +179,8 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     const [tsCtxMenu, setTsCtxMenu] = useState<{ x: number; y: number } | null>(null);
     const [rowCtxMenu, setRowCtxMenu] = useState<{ x: number; y: number; message: kafka.Message } | null>(null);
     const [saveDialog, setSaveDialog] = useState<kafka.Message | null>(null);
+    // Ingress rate meter (zero-load msg/sec) for the selected topic.
+    const [rateMeter, setRateMeter] = useState(false);
     const [savedToast, setSavedToast] = useState<string | null>(null);
     // null = original fetch order. Only one column sorted at a time.
     // Cycle on header click: null → desc → asc → null.
@@ -1103,6 +1106,13 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                         ? t(lang, "consume.cancel")
                         : t(lang, "consume.fetch")}
                 </button>
+                <button
+                    onClick={() => setRateMeter(true)}
+                    disabled={!topic}
+                    title={t(lang, "rate.button.tip")}
+                >
+                    {t(lang, "rate.button")}
+                </button>
                 <span className="count-pill">
                     {t(lang, "consume.shownOf", { shown: filtered.length, total: messages.length })}
                 </span>
@@ -1403,6 +1413,16 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                         },
                     ]}
                     onClose={() => setRowCtxMenu(null)}
+                />
+            )}
+
+            {rateMeter && (
+                <RateMeterDialog
+                    lang={lang}
+                    profileId={profileId}
+                    topic={topic}
+                    topics={topics}
+                    onClose={() => setRateMeter(false)}
                 />
             )}
 

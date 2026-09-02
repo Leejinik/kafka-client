@@ -16,6 +16,7 @@ import { TopicDeleteDialog } from "../components/TopicDeleteDialog";
 import { PartitionReassignDialog } from "../components/PartitionReassignDialog";
 import { GroupDeleteDialog } from "../components/GroupDeleteDialog";
 import { GroupResetOffsetsDialog } from "../components/GroupResetOffsetsDialog";
+import { RateMeterDialog } from "../components/RateMeterDialog";
 
 interface Props {
     lang: Lang;
@@ -122,6 +123,7 @@ type Dialog =
     | { kind: "edit"; topic: string }
     | { kind: "delete"; topic: string }
     | { kind: "reassign"; topic: string }
+    | { kind: "rate"; topic: string }
     | { kind: "groupDelete"; group: string }
     | { kind: "groupReset"; group: kafka.GroupView; topic: string };
 
@@ -358,6 +360,7 @@ export function TopicsPage({ lang, profileId, active = true, onTick, onTopicsCha
         }
         if (ctxMenu.topic) {
             return [
+                { label: t(lang, "rate.menu"), onClick: () => setDialog({ kind: "rate", topic: ctxMenu.topic! }) },
                 { label: t(lang, "topic.menu.edit"), onClick: () => setDialog({ kind: "edit", topic: ctxMenu.topic! }) },
                 { label: t(lang, "topic.menu.reassign"), onClick: () => setDialog({ kind: "reassign", topic: ctxMenu.topic! }) },
                 { label: t(lang, "topic.menu.delete"), danger: true, onClick: () => setDialog({ kind: "delete", topic: ctxMenu.topic! }) },
@@ -462,6 +465,15 @@ export function TopicsPage({ lang, profileId, active = true, onTick, onTopicsCha
                     topic={dialog.topic}
                     onClose={() => setDialog({ kind: "none" })}
                     onDeleted={() => { setDialog({ kind: "none" }); void refresh(); onTopicsChanged?.(); }}
+                />
+            )}
+            {dialog.kind === "rate" && (
+                <RateMeterDialog
+                    lang={lang}
+                    profileId={profileId}
+                    topic={dialog.topic}
+                    topics={topics.map((x) => x.name)}
+                    onClose={() => setDialog({ kind: "none" })}
                 />
             )}
             {dialog.kind === "reassign" && (
