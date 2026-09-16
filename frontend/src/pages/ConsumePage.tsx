@@ -209,6 +209,9 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     const [selected, setSelected] = useState<kafka.Message | null>(null);
 
     const scrollRef = useRef<HTMLDivElement>(null);
+    // Row count currently on screen. Kept in a ref because the tail follow
+    // effect below is declared before `filtered` exists and so cannot read it.
+    const filteredLenRef = useRef(0);
     const [viewport, setViewport] = useState<{ start: number; end: number }>({ start: 0, end: 60 });
     const { widths, setWidth, resetWidth } = useColumnWidths("kfc.consume.colWidths", COLUMNS);
     const fixedColsWidth = COLUMNS.filter((c) => !c.grow).reduce((sum, c) => sum + widths[c.key], 0);
@@ -295,6 +298,12 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         setMessages([]);
         setSelected(null);
         setError(null);
+        // The virtualization window has to be reset along with the buffer: it
+        // still holds whatever the previous fetch/scroll left behind, and a
+        // window that no longer overlaps the (now empty) list renders zero
+        // rows even as tail batches arrive.
+        setViewport({ start: 0, end: 60 });
+        if (scrollRef.current) scrollRef.current.scrollTop = 0;
         setTailing(true);
         setFollow(true);
         StartTailConsume(profileId, topic).catch((e) => {
@@ -307,12 +316,23 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         };
     }, [mode, topic, profileId, tailing]);
 
-    // Pin to bottom whenever the message list grows while following.
+    // Pin to bottom whenever the message list grows while following, and move
+    // the virtualization window down with it.
+    //
+    // The window must be derived here rather than left to the scroll handler:
+    // the assignment below only emits a scroll event when the list actually
+    // overflows its container. A short list — a tail that just started, a
+    // narrow filter — scrolls nowhere, so no event fires and a stale window
+    // keeps every arriving row hidden behind the padding rows: the counter
+    // climbs while the table stays blank.
     useEffect(() => {
         if (!tailing || !follow) return;
         const el = scrollRef.current;
         if (!el) return;
         el.scrollTop = el.scrollHeight;
+        const rows = Math.ceil(el.clientHeight / ROW_HEIGHT) + 20;
+        const len = filteredLenRef.current;
+        setViewport({ start: Math.max(0, len - rows), end: len });
     }, [messages, tailing, follow]);
 
     // Any wheel interaction pauses follow. (deltaY != 0 covers both
@@ -565,9 +585,21 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         return null;
     };
 
-    const visible = filtered.slice(viewport.start, viewport.end);
-    const padTop = viewport.start * ROW_HEIGHT;
-    const padBottom = Math.max(0, (filtered.length - viewport.end) * ROW_HEIGHT);
+    filteredLenRef.current = filtered.length;
+
+    // The stored window is advisory: the scroll handler and every fetch write
+    // it, so it can go stale when the row count shrinks underneath it (buffer
+    // cleared, filter narrowed). Slicing with a start past the end of the list
+    // renders no rows at all behind a padding row thousands of pixels tall —
+    // a table that looks empty while the counter reads "N / N" — and the
+    // inflated padding keeps scrollHeight large, so the next scroll-to-bottom
+    // re-derives the same bad start and the view never recovers on its own.
+    // Clamping on each render makes that state unreachable.
+    const vpStart = viewport.start < filtered.length ? viewport.start : 0;
+    const vpEnd = Math.min(filtered.length, Math.max(viewport.end, vpStart + 60));
+    const visible = filtered.slice(vpStart, vpEnd);
+    const padTop = vpStart * ROW_HEIGHT;
+    const padBottom = Math.max(0, (filtered.length - vpEnd) * ROW_HEIGHT);
 
     const onScroll = () => {
         const el = scrollRef.current;
@@ -1300,7 +1332,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                 <>
                                     {padTop > 0 && <tr style={{ height: padTop }}><td colSpan={COLUMNS.length} /></tr>}
                                     {visible.map((m, i) => {
-                                        const key = `${m.partition}-${m.offset}-${i + viewport.start}`;
+                                        const key = `${m.partition}-${m.offset}-${i + vpStart}`;
                                         const isSel = selected && selected.partition === m.partition && selected.offset === m.offset;
                                         const cellStyle: React.CSSProperties = {
                                             overflow: "hidden",
@@ -1321,7 +1353,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                                 }}
                                                 style={{ height: ROW_HEIGHT, background: cc?.rowBg }}
                                             >
-                                                <td className="mono muted" style={cellStyle}>{currentPageStart + viewport.start + i + 1}</td>
+                                                <td className="mono muted" style={cellStyle}>{currentPageStart + vpStart + i + 1}</td>
                                                 <td style={cellStyle}>{m.partition}</td>
                                                 <td className="mono" style={cellStyle}>{m.offset}</td>
                                                 <td className="mono" style={cellStyle} onContextMenu={openTsCtxMenu} title={formatLocalHuman(m.timestampMs)}>{formatTs(m.timestampMs)}</td>
