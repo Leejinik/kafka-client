@@ -9,6 +9,8 @@ import {
 import { kafka } from "../../wailsjs/go/models";
 import { Modal } from "./Modal";
 import { DurationCalculator } from "./DurationCalculator";
+import { TopicConfigHelp } from "./TopicConfigHelp";
+import { getTopicConfigDoc, TOPIC_CONFIG_KEYS } from "../lib/topicConfigDocs";
 
 interface Props {
     lang: Lang;
@@ -24,6 +26,8 @@ interface ConfigRow {
     original: string;
     source: string;
     sensitive: boolean;
+    // Row added via "+ 행 추가": the key is user-typed and stays editable.
+    custom: boolean;
 }
 
 export function TopicEditDialog({ lang, profileId, topic, onClose, onSaved }: Props) {
@@ -56,6 +60,7 @@ export function TopicEditDialog({ lang, profileId, topic, onClose, onSaved }: Pr
                     original: c.value,
                     source: c.source,
                     sensitive: c.sensitive,
+                    custom: false,
                 }));
                 setRows(cfgs);
             } catch (e) {
@@ -71,7 +76,7 @@ export function TopicEditDialog({ lang, profileId, topic, onClose, onSaved }: Pr
         setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, value } : r)));
     };
     const addCustomRow = () => {
-        setRows((rs) => [...rs, { key: "", value: "", original: "", source: "USER", sensitive: false }]);
+        setRows((rs) => [...rs, { key: "", value: "", original: "", source: "USER", sensitive: false, custom: true }]);
     };
 
     const handleSave = async () => {
@@ -161,17 +166,28 @@ export function TopicEditDialog({ lang, profileId, topic, onClose, onSaved }: Pr
                                                 const sensitiveLocked = r.sensitive && r.value === "";
                                                 const showCalc = isMsKey(r.key) && !sensitiveLocked;
                                                 return (
-                                                    <Fragment key={i + r.key}>
+                                                    <Fragment key={i}>
                                                         <tr>
-                                                            <td className="mono">{r.key || (
-                                                                <input
-                                                                    placeholder="key"
-                                                                    onChange={(e) => {
-                                                                        const v = e.target.value;
-                                                                        setRows((rs) => rs.map((rr, idx) => idx === i ? { ...rr, key: v } : rr));
-                                                                    }}
-                                                                />
-                                                            )}</td>
+                                                            <td className="mono">
+                                                                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                                                    {r.custom ? (
+                                                                        <input
+                                                                            list="topic-edit-cfg-keys"
+                                                                            placeholder="key"
+                                                                            value={r.key}
+                                                                            title={getTopicConfigDoc(r.key)?.summary[lang]}
+                                                                            style={{ flex: 1, minWidth: 0 }}
+                                                                            onChange={(e) => {
+                                                                                const v = e.target.value;
+                                                                                setRows((rs) => rs.map((rr, idx) => idx === i ? { ...rr, key: v } : rr));
+                                                                            }}
+                                                                        />
+                                                                    ) : (
+                                                                        <span title={getTopicConfigDoc(r.key)?.summary[lang]}>{r.key}</span>
+                                                                    )}
+                                                                    <TopicConfigHelp lang={lang} configKey={r.key} />
+                                                                </div>
+                                                            </td>
                                                             <td>
                                                                 <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                                                                     <input
@@ -211,6 +227,9 @@ export function TopicEditDialog({ lang, profileId, topic, onClose, onSaved }: Pr
                                         </tbody>
                                     </table>
                                 </div>
+                                <datalist id="topic-edit-cfg-keys">
+                                    {TOPIC_CONFIG_KEYS.filter((k) => !rows.some((r) => !r.custom && r.key === k)).map((k) => <option key={k} value={k} />)}
+                                </datalist>
                                 <button className="small" style={{ marginTop: 6 }} onClick={addCustomRow}>
                                     + {t(lang, "topic.cfg.add")}
                                 </button>

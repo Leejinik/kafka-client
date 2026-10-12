@@ -290,6 +290,67 @@ select.page-jump:focus { border-color: var(--accent); outline: none; }
 .inner-table td { padding: 4px 8px; border-bottom: 1px solid var(--border); }
 .inner-table tr:last-child td { border-bottom: none; }
 
+/* topic config help (see components/TopicConfigHelp.tsx) */
+button.cfg-help-btn {
+    flex: 0 0 auto;
+    width: 18px; height: 18px; padding: 0;
+    border-radius: 50%;
+    font-size: 11px; line-height: 1; font-weight: 600;
+    font-family: inherit;
+    color: var(--text-dim);
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+tr:hover button.cfg-help-btn,
+button.cfg-help-btn:focus-visible,
+button.cfg-help-btn.open { opacity: 1; }
+button.cfg-help-btn.open { border-color: var(--accent); color: var(--accent); }
+.cfg-help-pop {
+    position: fixed;
+    width: 440px; max-width: calc(100vw - 16px);
+    max-height: min(70vh, 560px);
+    display: flex; flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    z-index: 300;
+    font-size: 12px;
+}
+.cfg-help-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+}
+.cfg-help-badge {
+    flex: 0 0 auto;
+    font-size: 10px; font-weight: 600;
+    padding: 1px 6px; border-radius: 4px;
+    color: var(--warn-soft-text); background: var(--warn-soft-bg); border: 1px solid var(--warn-soft-border);
+}
+.cfg-help-body {
+    padding: 12px;
+    overflow: auto;
+    display: flex; flex-direction: column; gap: 12px;
+}
+.cfg-help-facts, .cfg-help-values { width: 100%; border-collapse: collapse; }
+.cfg-help-facts th, .cfg-help-values th {
+    position: static; background: transparent; border-bottom: none;
+    text-align: left; vertical-align: top;
+    padding: 3px 10px 3px 0; white-space: nowrap;
+}
+.cfg-help-facts th { color: var(--text-dim); font-weight: 400; width: 1%; }
+.cfg-help-values th { color: var(--text); font-weight: 600; }
+.cfg-help-facts td, .cfg-help-values td {
+    padding: 3px 0; border-bottom: none;
+    vertical-align: top; word-break: break-word; line-height: 1.5;
+}
+.cfg-help-pop tbody tr:hover { background: transparent; cursor: default; }
+.cfg-help-note {
+    padding: 8px 10px; border-radius: 6px; line-height: 1.5;
+    color: var(--warn-soft-text); background: var(--warn-soft-bg); border: 1px solid var(--warn-soft-border);
+}
+
 /* vertical splitter (between panels) */
 .v-splitter {
     background: transparent;

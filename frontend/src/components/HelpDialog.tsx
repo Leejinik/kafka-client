@@ -187,6 +187,7 @@ function buildSectionsKo(): Section[] {
                         <li>펼친 그룹 카드 → Offset 변경 / 그룹 삭제</li>
                     </ul>
                     <p><b>ms 단위 config 입력 (🧮)</b> — 토픽 생성/수정 다이얼로그에서 <M>retention.ms</M>·<M>segment.ms</M>처럼 <M>.ms</M>로 끝나는 항목 옆 <M>🧮</M> 버튼을 누르면 <b>일·시·분</b> ± 버튼으로 값을 쌓아 ms로 환산해 넣을 수 있습니다 (외부 계산기 불필요). 각 단위는 0 미만으로 내려가지 않으며 초·ms 단위는 제외됩니다.</p>
+                    <p><b>config 설명 (?)</b> — 같은 다이얼로그에서 설정 행에 마우스를 올리면 Key 옆에 <M>?</M> 버튼이 나타납니다. 누르면 Kafka 공식 문서 기준 설명·타입·기본값·허용 범위와, 선택형 값이면 각 값의 의미가 팝업으로 뜹니다. Key 위에 마우스를 올려 두면 한 줄 요약이 툴팁으로 보입니다. 새로 추가하는 행도 Key를 입력하면 동일하게 동작합니다.</p>
                     <p><b>msg/sec 컬럼</b> — 최근 60초 메시지 수 ÷ 60 (1초마다 갱신). End offset 변화량 기반. 순간 속도·파티션별 분포가 필요하면 우클릭 → <M>유입 속도 측정...</M> (6장 참고).</p>
                     <p><b>그룹 카드 partition Lag 표</b>는 컨슈머 그룹별로 partition 단위 Committed / End / Lag를 보여줍니다. 멤버가 표시되며 partition 할당이 없는 멤버는 <M>(할당 없음 / standby)</M>로 표시됩니다.</p>
                     <p><b>Committed / End Offset / Lag 셀에 hover</b>하면 10초 간격으로 측정한 <b>초당 변화량</b>이 툴팁으로 표시됩니다. End Offset은 발행 속도(<M>publish/sec</M>), Committed는 소비 속도, Lag는 lag 증감 추이 파악용. 펼친 직후 첫 샘플은 기준값이라 두 번째 SLOW tick부터 값이 나옵니다.</p>
@@ -549,6 +550,7 @@ function buildSectionsEn(): Section[] {
                         <li>Group card in expanded view → reset offsets / delete group</li>
                     </ul>
                     <p><b>Entering ms configs (🧮)</b> — in the create/edit topic dialog, fields ending in <M>.ms</M> (<M>retention.ms</M>, <M>segment.ms</M>…) show a <M>🧮</M> button: add up <b>days / hours / minutes</b> with ± buttons and it fills in the millisecond value (no external calculator). Each unit can't go below zero, and seconds/ms are intentionally excluded.</p>
+                    <p><b>Config descriptions (?)</b> — in the same dialogs, hovering a config row reveals a <M>?</M> button next to the key. Click it for the description, type, default and valid range from the Kafka documentation, plus what each value means for enum-style configs. Hovering the key itself shows a one-line summary. Rows you add behave the same once a key is typed.</p>
                     <p><b>msg/sec column</b> — messages in the last 60s ÷ 60 (refreshes every 1s), computed from end-offset deltas. For an instantaneous rate with a per-partition breakdown, right-click → <M>Measure ingress rate...</M> (see section 6).</p>
                     <p><b>Group card partition lag table</b> shows per-partition Committed / End / Lag. Members are listed; members without an assignment show as <M>(no assignment / standby)</M>.</p>
                     <p><b>Hover the Committed / End Offset / Lag cells</b> on a group card to see the <b>per-second delta</b> measured over the 10s SLOW tick interval. End Offset shows publish rate (<M>publish/sec</M>), Committed shows consume rate, Lag shows whether lag is growing or shrinking. The first sample after expand is the baseline — values appear from the second SLOW tick onward.</p>

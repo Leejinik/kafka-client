@@ -4,6 +4,8 @@ import { errString } from "../lib/errors";
 import { CreateTopic } from "../../wailsjs/go/main/App";
 import { Modal } from "./Modal";
 import { DurationCalculator } from "./DurationCalculator";
+import { TopicConfigHelp } from "./TopicConfigHelp";
+import { getTopicConfigDoc, TOPIC_CONFIG_KEYS } from "../lib/topicConfigDocs";
 
 interface Props {
     lang: Lang;
@@ -13,15 +15,6 @@ interface Props {
 }
 
 interface KV { key: string; value: string }
-
-const DEFAULT_KEYS = [
-    "retention.ms",
-    "cleanup.policy",
-    "compression.type",
-    "max.message.bytes",
-    "min.insync.replicas",
-    "segment.ms",
-];
 
 export function TopicCreateDialog({ lang, profileId, onClose, onCreated }: Props) {
     const [name, setName] = useState("");
@@ -122,12 +115,17 @@ export function TopicCreateDialog({ lang, profileId, onClose, onCreated }: Props
                                         <Fragment key={i}>
                                             <tr>
                                                 <td>
-                                                    <input
-                                                        list="topic-cfg-keys"
-                                                        value={r.key}
-                                                        onChange={(e) => updateRow(i, { key: e.target.value })}
-                                                        placeholder="retention.ms"
-                                                    />
+                                                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                                        <input
+                                                            list="topic-cfg-keys"
+                                                            value={r.key}
+                                                            title={getTopicConfigDoc(r.key)?.summary[lang]}
+                                                            style={{ flex: 1, minWidth: 0 }}
+                                                            onChange={(e) => updateRow(i, { key: e.target.value })}
+                                                            placeholder="retention.ms"
+                                                        />
+                                                        <TopicConfigHelp lang={lang} configKey={r.key} />
+                                                    </div>
                                                 </td>
                                                 <td>
                                                     <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -169,7 +167,7 @@ export function TopicCreateDialog({ lang, profileId, onClose, onCreated }: Props
                             </tbody>
                         </table>
                         <datalist id="topic-cfg-keys">
-                            {DEFAULT_KEYS.map((k) => <option key={k} value={k} />)}
+                            {TOPIC_CONFIG_KEYS.map((k) => <option key={k} value={k} />)}
                         </datalist>
                         <button className="small" style={{ marginTop: 6 }} onClick={addRow}>
                             + {t(lang, "topic.cfg.add")}
