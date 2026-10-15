@@ -1036,7 +1036,9 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                     value={mode}
                     onChange={(e) => setMode(e.target.value as Mode)}
                     style={{ width: 140 }}
-                    disabled={tailing}
+                    // Picking tail -f starts a tail at once; mid-fetch that
+                    // would supersede the fetch still on screen.
+                    disabled={tailing || loading}
                 >
                     <option value="beginning">{t(lang, "consume.mode.beginning")}</option>
                     <option value="end">{t(lang, "consume.mode.end")}</option>

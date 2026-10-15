@@ -30,10 +30,47 @@ type App struct {
 	// startup once we know the value.
 	version string
 
-	// In-flight Consume() cancel functions, keyed by profileID. The UI is
-	// single-fetch per profile so we keep at most one entry per id.
+	// In-flight Consume()/ConsumeRange()/tail registrations, keyed by
+	// profileID. The UI is single-fetch per profile so we keep at most one
+	// entry per id; see claimConsume.
 	consumeMu     sync.Mutex
-	consumeCancel map[string]context.CancelFunc
+	consumeCancel map[string]*consumeSlot
+}
+
+// consumeSlot is one registration in App.consumeCancel. It is held by pointer
+// so a finishing call can tell whether the entry is still its own.
+type consumeSlot struct {
+	cancel context.CancelFunc
+}
+
+// claimConsume cancels whatever consume or tail is registered for the profile
+// and installs a new registration in its place. The returned release removes
+// the registration only if it is still ours and reports whether it was.
+//
+// The ownership check matters because the cancelled call unwinds after its
+// successor has registered. Deleting the entry unconditionally there drops
+// the successor's cancel: CancelConsume then finds nothing, a tail keeps
+// streaming with no way to stop it, and the next tail runs beside it — every
+// record reaches the table twice.
+func (a *App) claimConsume(profileID string) (context.Context, func() bool) {
+	ctx, cancel := context.WithCancel(a.ctx)
+	slot := &consumeSlot{cancel: cancel}
+	a.consumeMu.Lock()
+	if prev := a.consumeCancel[profileID]; prev != nil {
+		prev.cancel()
+	}
+	a.consumeCancel[profileID] = slot
+	a.consumeMu.Unlock()
+	return ctx, func() bool {
+		a.consumeMu.Lock()
+		current := a.consumeCancel[profileID] == slot
+		if current {
+			delete(a.consumeCancel, profileID)
+		}
+		a.consumeMu.Unlock()
+		cancel()
+		return current
+	}
 }
 
 // NewApp wires up the dependencies.
@@ -50,7 +87,7 @@ func NewApp() *App {
 	return &App{
 		profiles:      store,
 		manager:       kafka.NewManager(),
-		consumeCancel: map[string]context.CancelFunc{},
+		consumeCancel: map[string]*consumeSlot{},
 	}
 }
 
@@ -294,22 +331,8 @@ func (a *App) ResetGroupOffsetsForTopic(
 // --- Consume / Produce --------------------------------------------------
 
 func (a *App) Consume(profileID string, opts kafka.ConsumeOptions) ([]kafka.Message, error) {
-	ctx, cancel := context.WithCancel(a.ctx)
-	a.consumeMu.Lock()
-	// If somehow an older Consume is still registered for this profile,
-	// cancel it before installing our own — the UI shouldn't allow this,
-	// but it costs nothing to be defensive.
-	if prev, ok := a.consumeCancel[profileID]; ok && prev != nil {
-		prev()
-	}
-	a.consumeCancel[profileID] = cancel
-	a.consumeMu.Unlock()
-	defer func() {
-		a.consumeMu.Lock()
-		delete(a.consumeCancel, profileID)
-		a.consumeMu.Unlock()
-		cancel()
-	}()
+	ctx, release := a.claimConsume(profileID)
+	defer release()
 	return a.manager.Consume(ctx, profileID, opts)
 }
 
@@ -318,19 +341,8 @@ func (a *App) Consume(profileID string, opts kafka.ConsumeOptions) ([]kafka.Mess
 // opts.Cursor on the next call to retrieve the following page. Uses the
 // same cancel slot as Consume so CancelConsume() aborts an in-flight page.
 func (a *App) ConsumeRange(profileID string, opts kafka.ConsumeRangeOptions) (kafka.ConsumeRangePage, error) {
-	ctx, cancel := context.WithCancel(a.ctx)
-	a.consumeMu.Lock()
-	if prev, ok := a.consumeCancel[profileID]; ok && prev != nil {
-		prev()
-	}
-	a.consumeCancel[profileID] = cancel
-	a.consumeMu.Unlock()
-	defer func() {
-		a.consumeMu.Lock()
-		delete(a.consumeCancel, profileID)
-		a.consumeMu.Unlock()
-		cancel()
-	}()
+	ctx, release := a.claimConsume(profileID)
+	defer release()
 	return a.manager.ConsumeRange(ctx, profileID, opts)
 }
 
@@ -340,10 +352,10 @@ func (a *App) ConsumeRange(profileID string, opts kafka.ConsumeRangeOptions) (ka
 // cancel slot is shared with StartTailConsume so this also stops a tail.
 func (a *App) CancelConsume(profileID string) {
 	a.consumeMu.Lock()
-	cancel := a.consumeCancel[profileID]
+	slot := a.consumeCancel[profileID]
 	a.consumeMu.Unlock()
-	if cancel != nil {
-		cancel()
+	if slot != nil {
+		slot.cancel()
 	}
 }
 
@@ -358,24 +370,18 @@ func (a *App) StartTailConsume(profileID, topic string) error {
 	if topic == "" {
 		return errors.New("topic is required")
 	}
-	ctx, cancel := context.WithCancel(a.ctx)
-	a.consumeMu.Lock()
-	if prev := a.consumeCancel[profileID]; prev != nil {
-		prev()
-	}
-	a.consumeCancel[profileID] = cancel
-	a.consumeMu.Unlock()
+	ctx, release := a.claimConsume(profileID)
 
 	go func() {
-		defer func() {
-			a.consumeMu.Lock()
-			delete(a.consumeCancel, profileID)
-			a.consumeMu.Unlock()
-			cancel()
-		}()
 		err := a.manager.TailConsume(ctx, profileID, topic, func(batch []kafka.Message) {
 			wailsruntime.EventsEmit(a.ctx, "consume.tail.batch:"+profileID, batch)
 		})
+		// A tail replaced by a newer call stays quiet: the page is already
+		// showing its successor, and a "stopped" here would reset the UI out
+		// from under it.
+		if !release() {
+			return
+		}
 		errMsg := ""
 		if err != nil && !errors.Is(err, context.Canceled) {
 			errMsg = err.Error()
