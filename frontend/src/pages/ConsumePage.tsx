@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Lang, t } from "../lib/i18n";
 import { errString } from "../lib/errors";
-import { CancelConsume, Consume, ConsumeRange, ListTopics, StartTailConsume } from "../../wailsjs/go/main/App";
+import { CancelConsume, Consume, ConsumeRange, ListTopics, SearchConsume, StartTailConsume } from "../../wailsjs/go/main/App";
 import { EventsOff, EventsOn } from "../../wailsjs/runtime";
 import { kafka } from "../../wailsjs/go/models";
 import {
@@ -76,6 +76,9 @@ function normalizeMax(text: string, mode: Mode): number {
     if (n <= 0) return DEFAULT_MAX;
     return n;
 }
+// Payload of the "consume.search.progress:<profileID>" event (Go
+// kafka.SearchProgress; events aren't part of the generated models).
+type SearchProgress = { scanned: number; total: number; matched: number };
 type Target = "value" | "key" | "headers";
 type TsFormat = "local" | "unix";
 
@@ -83,6 +86,7 @@ const ROW_HEIGHT = 28;
 const TS_FORMAT_KEY = "consume.tsFormat";
 const LIZ_FILTER_KEY = "kfc.consume.lizFilter";
 const LIZ_FILTER_OPEN_KEY = "kfc.consume.lizFilterOpen";
+const SCAN_SEARCH_KEY = "consume.scanSearch";
 
 // Discrete pagination unit. Used by both the timestamp ConsumeRange path and
 // the cursor-based Consume path so the user can pre-size each page for
@@ -160,6 +164,16 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
     const [target, setTarget] = useState<Target>("value");
     const [useRegex, setUseRegex] = useState(false);
     const [caseSensitive, setCaseSensitive] = useState(false);
+
+    // Scan search: when on and a search is active, 가져오기 asks the backend
+    // to keep reading the topic until N *matching* records are found
+    // (SearchConsume) instead of fetching N records and filtering them here.
+    const [scanSearch, setScanSearch] = useState<boolean>(() => localStorage.getItem(SCAN_SEARCH_KEY) !== "0");
+    useEffect(() => { localStorage.setItem(SCAN_SEARCH_KEY, scanSearch ? "1" : "0"); }, [scanSearch]);
+    // Live progress while a scan runs; summary of the last finished scan
+    // (cleared by any non-search fetch).
+    const [scanProgress, setScanProgress] = useState<SearchProgress | null>(null);
+    const [scanResult, setScanResult] = useState<{ scanned: number; total: number; stopReason: string } | null>(null);
 
     // Advanced search: each card holds a list of CSV-parsed tokens. A message
     // matches a card iff its target field contains every token as a
@@ -384,6 +398,12 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     }, [tailing, profileId]);
+
+    useEffect(() => {
+        const ev = "consume.search.progress:" + profileId;
+        EventsOn(ev, (p: SearchProgress) => setScanProgress(p));
+        return () => EventsOff(ev);
+    }, [profileId]);
 
     useEffect(() => {
         (async () => {
@@ -663,6 +683,26 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode]);
 
+    // Modes the backend scan search supports (timestamp range / tail / -1
+    // paging keep the plain fetch-then-filter behaviour).
+    const scanModes: Mode[] = ["beginning", "end", "offsetAfter", "offsetBefore"];
+    const searchActive = advancedSearch
+        ? searchCards.some((c) => c.tokens.length > 0)
+        : search.trim() !== "";
+    const scanApplies = scanSearch && searchActive && scanModes.includes(mode) && pagingKind === null;
+    const scanToggle = (
+        <label
+            className="checkbox"
+            title={scanModes.includes(mode) && pagingKind === null
+                ? t(lang, "consume.scan.tip")
+                : t(lang, "consume.scan.unsupported")}
+            style={scanModes.includes(mode) && pagingKind === null ? undefined : { opacity: 0.5 }}
+        >
+            <input type="checkbox" checked={scanSearch} onChange={(e) => setScanSearch(e.target.checked)} />
+            {t(lang, "consume.scan")}
+        </label>
+    );
+
     const handleFetch = async () => {
         if (!topic || mode === "tail") return;
         // Catch the case where the user pressed Fetch via keyboard while the
@@ -683,7 +723,36 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
             null;
         setLoading(true);
         setError(null);
+        setScanResult(null);
+        setScanProgress(null);
         try {
+            if (scanSearch && searchActive && scanModes.includes(mode) && effectivePaging === null) {
+                const res = await SearchConsume(profileId, kafka.SearchOptions.createFrom({
+                    topic,
+                    mode,
+                    offset: mode === "offsetAfter" || mode === "offsetBefore" ? Number(offset) || 0 : 0,
+                    maxMessages: effectiveMax,
+                    timeoutMs,
+                    query: search,
+                    regex: useRegex,
+                    caseSensitive,
+                    target,
+                    cards: advancedSearch ? searchCards.map((c) => c.tokens) : [],
+                }));
+                const out = res.messages || [];
+                setMessages(out);
+                setSelected(out.length > 0 ? out[0] : null);
+                setPageCursors([]);
+                setPageSizes([]);
+                setPageIdx(0);
+                setCurrentPageStart(0);
+                setTotalCount(null);
+                setNextCursor(null);
+                setScanResult({ scanned: res.scanned, total: res.total, stopReason: res.stopReason });
+                setViewport({ start: 0, end: Math.min(out.length, 60) });
+                if (scrollRef.current) scrollRef.current.scrollTop = 0;
+                return;
+            }
             if (mode === "timestamp") {
                 const page = await fetchRangePage([]);
                 const size = page.messages?.length || 0;
@@ -740,6 +809,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
             setError(errString(e));
         } finally {
             setLoading(false);
+            setScanProgress(null);
         }
     };
 
@@ -1112,8 +1182,10 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                 ))}
                             </select>
                         )}
-                        <label className="toolbar-field">
-                            <span className="toolbar-field-label">{t(lang, "consume.timeout")}</span>
+                        <label className="toolbar-field" title={scanApplies ? t(lang, "consume.scan.timeoutTip") : undefined}>
+                            <span className="toolbar-field-label">
+                                {scanApplies ? t(lang, "consume.scan.timeout") : t(lang, "consume.timeout")}
+                            </span>
                             <input
                                 type="number"
                                 style={{ width: 90 }}
@@ -1138,6 +1210,8 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                         ? t(lang, "consume.stop")
                         : loading
                         ? t(lang, "consume.cancel")
+                        : scanApplies
+                        ? t(lang, "consume.fetch.scan")
                         : t(lang, "consume.fetch")}
                 </button>
                 <button
@@ -1148,8 +1222,24 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                     {t(lang, "rate.button")}
                 </button>
                 <span className="count-pill">
-                    {t(lang, "consume.shownOf", { shown: filtered.length, total: messages.length })}
+                    {loading && scanProgress
+                        ? t(lang, "consume.scan.progress", {
+                            scanned: scanProgress.scanned.toLocaleString(),
+                            total: scanProgress.total.toLocaleString(),
+                            pct: scanProgress.total > 0 ? Math.floor((scanProgress.scanned / scanProgress.total) * 100) : 0,
+                            matched: scanProgress.matched.toLocaleString(),
+                        })
+                        : t(lang, "consume.shownOf", { shown: filtered.length, total: messages.length })}
                 </span>
+                {!loading && scanResult && (
+                    <span className="muted" style={{ fontSize: 11 }}>
+                        {t(lang, "consume.scan.done", {
+                            scanned: scanResult.scanned.toLocaleString(),
+                            total: scanResult.total.toLocaleString(),
+                        })}
+                        {scanResult.stopReason !== "enough" && ` · ${t(lang, "consume.scan.stop." + scanResult.stopReason)}`}
+                    </span>
+                )}
                 {pagingKind !== null && pageCursors.length > 0 && (
                     <>
                         <button onClick={handleFirstPage} disabled={pageIdx === 0 || loading}>
@@ -1233,6 +1323,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                             <input type="checkbox" checked={caseSensitive} onChange={(e) => setCaseSensitive(e.target.checked)} />
                             {t(lang, "consume.case")}
                         </label>
+                        {scanToggle}
                         <button onClick={() => setAdvancedSearch(true)}>
                             {t(lang, "consume.advanced")}
                         </button>
@@ -1269,6 +1360,7 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                                 </button>
                             )}
                         </div>
+                        {scanToggle}
                         <button onClick={() => setAdvancedSearch(false)}>
                             {t(lang, "consume.advanced.exit")}
                         </button>
@@ -1327,7 +1419,11 @@ export function ConsumePage({ lang, profileId, defaultTopic, topic, onTopicChang
                             {filtered.length === 0 ? (
                                 <tr>
                                     <td colSpan={COLUMNS.length} className="muted" style={{ textAlign: "center", padding: 20 }}>
-                                        {t(lang, "consume.empty")}
+                                        {messages.length > 0
+                                            ? t(lang, "consume.emptyFiltered", { total: messages.length })
+                                            : scanResult
+                                            ? t(lang, "consume.scan.empty", { scanned: scanResult.scanned.toLocaleString() })
+                                            : t(lang, "consume.empty")}
                                     </td>
                                 </tr>
                             ) : (

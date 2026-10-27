@@ -318,7 +318,8 @@ function buildSectionsKo(): Section[] {
 
                     <p><b>검색 행 (일반)</b>:</p>
                     <ul>
-                        <li><b>검색 input</b> — 입력값이 들어간 메시지만 그리드에 남김</li>
+                        <li><b>검색 input</b> — 입력값이 들어간 메시지만 그리드에 남김. <b>이미 가져온 메시지 안에서만</b> 걸러냅니다 — 예: <M>Oldest</M> + 최대 10건이면 오프셋 앞쪽 10건만 보고, 그 안에 없으면 <M>0 / 10 건</M>과 「가져온 N건 중 맞는 메시지 없음」 안내가 뜹니다. 아래 <b>검색어로 찾기</b>를 켜면 토픽 전체에서 찾습니다</li>
+                        <li><b>검색어로 찾기</b> 체크박스 (기본 켜짐) — 검색어(또는 고급 검색 카드)가 있으면 <M>가져오기</M> 버튼이 <M>찾기</M>로 바뀌고, 누르면 토픽을 계속 읽어 <b>검색어에 맞는 메시지를 최대 메시지 수만큼</b> 모아 옵니다. <M>Oldest</M>·<M>오프셋 이후</M>는 앞에서부터 처음 맞는 N건, <M>Newest</M>·<M>오프셋 이전</M>은 끝에서부터 거꾸로 가장 최근에 맞는 N건(표에는 오래된→최신 순). 찾는 동안 카운트 자리에 <M>찾는 중 훑은 건수 / 전체 (%) · 찾음 N</M>이 뜨고, 끝나면 옆에 몇 건 훑었는지와 멈춘 이유(끝까지 훑음 / 타임아웃으로 중단 / 중단함)를 표시. <b>타임아웃이 전체 찾기 시간 한도</b>이고 <M>0</M>이면 <b>무제한</b>(이때 라벨이 <M>타임아웃 (ms, 0=무제한)</M>으로 바뀜). 큰 토픽은 0으로 두고 필요하면 <M>중단</M>(예: 2,600만 건 ≈ 25초). <M>중단</M>을 누르면 그때까지 찾은 것을 보여 줍니다. 찾기 시점의 끝 오프셋까지만 훑습니다. 타임스탬프 모드·최대 메시지 수 <M>-1</M>·tail -f 에서는 동작하지 않고(흐리게 표시) 예전처럼 가져온 것 안에서만 거릅니다. liz.message.pipeline 필터는 찾아 온 결과에 화면에서 한 번 더 적용됩니다. 정규식은 서버(Go RE2) 문법이라 뒤돌아보기(lookbehind) 같은 일부 JS 문법은 오류가 납니다</li>
                         <li><b>검색 대상</b> 드롭다운 — <M>값</M> / <M>키</M> / <M>헤더</M> (헤더는 <M>k=v</M>로 직렬화 후 매칭)</li>
                         <li><b>정규식</b> 체크 — input을 regex로 해석. invalid regex면 필터 미적용 (전체 표시)</li>
                         <li><b>대소문자 구분</b> 체크</li>
@@ -681,7 +682,8 @@ function buildSectionsEn(): Section[] {
 
                     <p><b>Basic search row</b>:</p>
                     <ul>
-                        <li><b>Search input</b> — keeps only messages containing the query</li>
+                        <li><b>Search input</b> — keeps only messages containing the query. It filters <b>only what was already fetched</b> — e.g. <M>Oldest</M> + max 10 looks at the first 10 offsets only; if none match you get <M>0 of 10</M> and a "none of N fetched match" notice. Turn on <b>Find by search</b> below to search the whole topic</li>
+                        <li><b>Find by search</b> checkbox (on by default) — with a search (or advanced cards) set, <M>Fetch</M> becomes <M>Find</M> and keeps reading the topic until <b>Max messages matching records</b> are collected. <M>Oldest</M>/after-offset return the first N matches from the start; <M>Newest</M>/before-offset scan backward and return the newest N matches (shown oldest→newest). While running the count shows <M>Scanning scanned / total (%) · found N</M>; afterwards it shows how much was scanned and why it stopped (reached the end / timeout / canceled). <b>Timeout caps the whole search</b>; <M>0</M> means <b>unlimited</b> (the label then reads <M>Timeout (ms, 0 = unlimited)</M>). For large topics use 0 and press <M>Cancel</M> if needed (e.g. 26M records ≈ 25 s). <M>Cancel</M> shows what was found so far. Only records up to the end offset at start are scanned. Not available in timestamp mode, max <M>-1</M> or tail -f (dimmed) — those keep filtering only what was fetched. The liz.message.pipeline filter is applied on top of the results. Regex uses Go RE2 syntax, so some JS-only constructs (lookbehind) error out</li>
                         <li><b>Search target</b> dropdown — <M>Value</M> / <M>Key</M> / <M>Headers</M> (headers are serialised as <M>k=v</M> for matching)</li>
                         <li><b>Regex</b> checkbox — treats the input as a regular expression; an invalid pattern silently falls back to "no filter"</li>
                         <li><b>Case-sensitive</b> checkbox</li>

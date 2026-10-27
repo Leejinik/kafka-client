@@ -346,6 +346,19 @@ func (a *App) ConsumeRange(profileID string, opts kafka.ConsumeRangeOptions) (ka
 	return a.manager.ConsumeRange(ctx, profileID, opts)
 }
 
+// SearchConsume scans a topic for records matching a search until
+// opts.MaxMessages matches are found (or the range / timeout runs out).
+// Progress streams via "consume.search.progress:<profileID>" (payload:
+// kafka.SearchProgress). Shares the Consume cancel slot, so CancelConsume()
+// stops it and the matches found so far are returned.
+func (a *App) SearchConsume(profileID string, opts kafka.SearchOptions) (kafka.SearchResult, error) {
+	ctx, release := a.claimConsume(profileID)
+	defer release()
+	return a.manager.SearchConsume(ctx, profileID, opts, func(p kafka.SearchProgress) {
+		wailsruntime.EventsEmit(a.ctx, "consume.search.progress:"+profileID, p)
+	})
+}
+
 // CancelConsume cancels an in-flight Consume() for the given profile. Returns
 // whatever has been collected so far via the original Consume call (the
 // manager honours ctx cancellation by returning partial results). The same
