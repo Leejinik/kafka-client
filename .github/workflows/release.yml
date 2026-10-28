@@ -123,8 +123,93 @@ jobs:
           path: build/bin/kafka-client-linux-amd64
           if-no-files-found: error
 
+  build-macos:
+    # Wails can't cross-compile to macOS, so this has to run on a Mac runner.
+    # darwin/universal gives one .app that runs on both Intel and Apple Silicon.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            echo "version=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm install
+
+      - name: Build
+        run: |
+          wails build -platform darwin/universal \
+            -ldflags "-X main.Version=${{ steps.ver.outputs.version }}"
+          test -d build/bin/kafka-client.app
+          lipo -info build/bin/kafka-client.app/Contents/MacOS/kafka-client
+
+      - name: Ad-hoc sign
+        # Not a Developer ID signature (no Apple account), so Gatekeeper still
+        # warns on first open. But Apple Silicon refuses to run a binary with no
+        # signature at all, and lipo can leave the universal binary unsigned.
+        run: |
+          codesign --force --deep --sign - build/bin/kafka-client.app
+          codesign --verify --verbose build/bin/kafka-client.app
+
+      - name: Smoke launch
+        # Launch the app for a few seconds and screenshot it. Best effort: the
+        # runner's screen recording permission isn't guaranteed, so a missing
+        # screenshot doesn't fail the job — but the app crashing on start does.
+        run: |
+          build/bin/kafka-client.app/Contents/MacOS/kafka-client > smoke.log 2>&1 &
+          pid=$!
+          sleep 15
+          screencapture -x smoke.png || echo "screencapture failed"
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "app exited during smoke launch"; cat smoke.log; exit 1
+          fi
+          kill "$pid" || true
+          cat smoke.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kafka-client-macos-smoke
+          path: |
+            smoke.png
+            smoke.log
+          if-no-files-found: ignore
+
+      - name: Package
+        # ditto (not zip) keeps the bundle's symlinks, exec bits and signature.
+        run: |
+          cd build/bin
+          ditto -c -k --keepParent kafka-client.app kafka-client-macos-universal.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kafka-client-macos
+          path: build/bin/kafka-client-macos-universal.zip
+          if-no-files-found: error
+
   release:
-    needs: [build-windows, build-linux]
+    needs: [build-windows, build-linux, build-macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -164,5 +249,6 @@ jobs:
           files: |
             dist/kafka-client.exe
             dist/kafka-client-linux-amd64
+            dist/kafka-client-macos-universal.zip
           draft: false
           prerelease: false

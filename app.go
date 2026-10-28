@@ -123,6 +123,9 @@ func releaseAssetName() string {
 		// e.g. kafka-client-linux-amd64. GOARCH keeps this honest if an arm64
 		// job is ever added to the workflow.
 		return "kafka-client-linux-" + runtime.GOARCH
+	case "darwin":
+		// One universal .app (amd64+arm64) zipped with ditto, so no GOARCH here.
+		return "kafka-client-macos-universal.zip"
 	default:
 		return "kafka-client.exe"
 	}
